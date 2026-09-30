@@ -1,3 +1,9 @@
+v1.0 (Vanilla JS + Python Monolith)： 專注於完成領域邏輯（Domain Logic），成功將 PyTorch 訓練的 Transformer 模型落地，驗證 20 維棒球物理特徵與九宮格座標映射的可行性。
+
+v2.0 (Vite React SPA + REST API)： 隨著「自由配球」與「實戰紀錄」的雙頁面需求增加，原生 JS 狀態變得難以維護。將前後端分離，導入 React Component 提升程式碼復用率，並解決跨網域（CORS）請求問題。
+
+v3.0 (Next.js App Router BFF)： 為了解決 SPA 首次載入效能（FCP）並保護後端 AI API 端點，升級為 Next.js 架構。利用 Server Components 與 Vercel 部署，完成具備高安全性與擴展性的企業級系統。
+
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
 ## Getting Started
