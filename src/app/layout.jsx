@@ -9,7 +9,7 @@ export const metadata = {
 export default function RootLayout({ children }) {
   return (
     <html lang="zh-TW">
-      <body>
+      <body suppressHydrationWarning>
         <PitcherProvider>{children}</PitcherProvider>
       </body>
     </html>

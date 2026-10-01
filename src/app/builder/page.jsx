@@ -186,30 +186,89 @@ export default function BuilderPage() {
         <div className="at-bat-view">
           <StrikeZone pitches={renderPitches} />
           <div style={{ flex: 1 }}>
-            <div className="lab-controls" style={{ marginBottom: "10px" }}>
-              <div className="control-group">
-                <label style={{ color: "#e67e22", fontWeight: "bold" }}>
+            <div
+              className="lab-controls"
+              style={{
+                marginBottom: "10px",
+                display: "flex",
+                flexWrap: "wrap",
+                alignItems: "center",
+                gap: "15px",
+              }}
+            >
+              {/* 🌟 修改區塊：替換成加減按鈕控制器 */}
+              <div
+                className="control-group"
+                style={{ display: "flex", alignItems: "center", gap: "10px" }}
+              >
+                <label
+                  style={{ color: "#e67e22", fontWeight: "bold", margin: 0 }}
+                >
                   配球數 (Pitches)
                 </label>
-                <input
-                  type="number"
-                  value={seqLength}
-                  onChange={(e) =>
-                    setSeqLength(
-                      Math.max(1, Math.min(7, parseInt(e.target.value) || 1))
-                    )
-                  }
-                  min="1"
-                  max="7"
-                  style={{
-                    width: "60px",
-                    padding: "5px",
-                    textAlign: "center",
-                    borderRadius: "4px",
-                    border: "1px solid #ccc",
-                  }}
-                />
+                <div
+                  style={{ display: "flex", alignItems: "center", gap: "8px" }}
+                >
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSeqLength((prev) => Math.max(1, prev - 1))
+                    }
+                    disabled={seqLength <= 1}
+                    style={{
+                      width: "32px",
+                      height: "32px",
+                      backgroundColor: seqLength <= 1 ? "#f3f4f6" : "#e5e7eb",
+                      color: seqLength <= 1 ? "#9ca3af" : "#374151",
+                      border: "none",
+                      borderRadius: "50%",
+                      fontSize: "18px",
+                      fontWeight: "bold",
+                      cursor: seqLength <= 1 ? "not-allowed" : "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    -
+                  </button>
+                  <span
+                    style={{
+                      fontSize: "16px",
+                      fontWeight: "bold",
+                      width: "24px",
+                      textAlign: "center",
+                      color: "#333",
+                    }}
+                  >
+                    {seqLength}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSeqLength((prev) => Math.min(7, prev + 1))
+                    }
+                    disabled={seqLength >= 7}
+                    style={{
+                      width: "32px",
+                      height: "32px",
+                      backgroundColor: seqLength >= 7 ? "#f3f4f6" : "#e5e7eb",
+                      color: seqLength >= 7 ? "#9ca3af" : "#374151",
+                      border: "none",
+                      borderRadius: "50%",
+                      fontSize: "18px",
+                      fontWeight: "bold",
+                      cursor: seqLength >= 7 ? "not-allowed" : "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    +
+                  </button>
+                </div>
               </div>
+
               <button
                 className="btn-simulate"
                 onClick={runSequence}
