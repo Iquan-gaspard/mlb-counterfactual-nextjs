@@ -43,51 +43,111 @@ export const ZONE_EN = {
   壞_挖地瓜: "In the Dirt",
 };
 
-/**
- * 九宮格 UI 元件
- * @param {Array} pitches - 要繪製的球跡陣列 [{x, y, isStrike, isModified, num}]
- * @param {Function} onZoneClick - (選填) 如果在自由配球模式，點擊九宮格時觸發的事件
- */
 export default function StrikeZone({ pitches = [], onZoneClick }) {
-  // 生成 9 個好球帶格子
   const renderCells = () => {
     return Array.from({ length: 9 }).map((_, idx) => (
       <div
         key={idx}
         className="zone-cell"
-        onClick={() => onZoneClick && onZoneClick(idx)} // 預留給自由配球點擊用
+        onClick={() => onZoneClick && onZoneClick(idx)}
       ></div>
     ));
   };
 
   return (
-    <div className="pitch-plot-container">
-      <div className="strike-zone">
-        {/* 畫出九宮格底圖 */}
-        {renderCells()}
+    <div
+      style={{ display: "flex", flexDirection: "column", alignItems: "center" }}
+    >
+      <div className="pitch-plot-container">
+        <div className="strike-zone">
+          {renderCells()}
 
-        {/* 畫出球的軌跡點 */}
-        {pitches.map((pitch, idx) => {
-          // 判斷樣式：被修改的球(橘色)、好球(紅色)、壞球(綠色)
-          let dotClass = "pitch-dot ";
-          if (pitch.isModified) dotClass += "cf-dot";
-          else if (pitch.isStrike) dotClass += "strike-dot";
-          else dotClass += "ball-dot";
+          {pitches.map((pitch, idx) => {
+            // 🌟 核心顏色邏輯：好球紅色、壞球綠色
+            const bgColor = pitch.isStrike ? "#e74c3c" : "#2ecc71"; // 紅色(Strike) / 綠色(Ball)
+            const isCurrent = pitch.isModified;
 
-          return (
-            <div
-              key={idx}
-              className={dotClass}
-              style={{
-                left: `${pitch.x}%`,
-                top: `${pitch.y}%`,
-                opacity: pitch.opacity || 1, // 支援半透明歷史軌跡
-              }}
-            >
-              {pitch.num}
-            </div>
-          );
-        })}
+            // 當前球加上粗黃色外框與放大效果，歷史球維持細白框
+            const borderStyle = isCurrent
+              ? "3px solid #f1c40f"
+              : "1px solid rgba(255,255,255,0.7)";
+            const transformStyle = isCurrent
+              ? "translate(-50%, -50%) scale(1.15)"
+              : "translate(-50%, -50%)";
+
+            return (
+              <div
+                key={idx}
+                className="pitch-dot"
+                style={{
+                  left: `${pitch.x}%`,
+                  top: `${pitch.y}%`,
+                  backgroundColor: bgColor,
+                  border: borderStyle,
+                  opacity: pitch.opacity || 1,
+                  transform: transformStyle,
+                  zIndex: isCurrent ? 20 : 10,
+                  boxShadow: isCurrent
+                    ? "0 0 10px rgba(241, 196, 15, 0.8)"
+                    : "1px 1px 3px rgba(0,0,0,0.4)",
+                }}
+              >
+                {pitch.num}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 🌟 新增：好壞球圖例與英文翻譯 */}
+      <div
+        style={{
+          marginTop: "15px",
+          display: "flex",
+          gap: "15px",
+          fontSize: "13px",
+          fontWeight: "bold",
+          color: "#555",
+          background: "#fff",
+          padding: "8px 15px",
+          borderRadius: "20px",
+          boxShadow: "0 2px 5px rgba(0,0,0,0.05)",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+          <div
+            style={{
+              width: "12px",
+              height: "12px",
+              backgroundColor: "#e74c3c",
+              borderRadius: "50%",
+            }}
+          ></div>
+          <span>好球 (Strike)</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+          <div
+            style={{
+              width: "12px",
+              height: "12px",
+              backgroundColor: "#2ecc71",
+              borderRadius: "50%",
+            }}
+          ></div>
+          <span>壞球 (Ball)</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+          <div
+            style={{
+              width: "12px",
+              height: "12px",
+              backgroundColor: "transparent",
+              border: "3px solid #f1c40f",
+              borderRadius: "50%",
+            }}
+          ></div>
+          <span>當前球 (Current)</span>
+        </div>
       </div>
     </div>
   );

@@ -72,18 +72,29 @@ export default function PitcherProvider({ children }) {
         </div>
 
         <div className="tab-navigation">
-          {/* 🌟 Next.js 專屬的 Link 元件與路徑判斷 */}
           <Link
             href="/"
             className={pathname === "/" ? "tab-btn active" : "tab-btn"}
           >
-            📊 實戰打席分析 (Game At-Bats)
+            📊 實戰打席分析
           </Link>
           <Link
             href="/builder"
             className={pathname === "/builder" ? "tab-btn active" : "tab-btn"}
           >
-            🎯 自由配球實驗室 (Sequence Builder)
+            🎯 傳統自由配球
+          </Link>
+          {/* 🌟 加上這個全新互動版的按鈕 */}
+          <Link
+            href="/interactive"
+            className={
+              pathname === "/interactive" ? "tab-btn active" : "tab-btn"
+            }
+            style={{
+              backgroundColor: pathname === "/interactive" ? "#27ae60" : "",
+            }}
+          >
+            🎮 沉浸式配球推演
           </Link>
         </div>
 

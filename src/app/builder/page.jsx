@@ -42,14 +42,46 @@ export default function BuilderPage() {
     fetchBatters();
   }, []);
 
+  // 🌟 修復版：保留歷史設定的聰明陣列更新
   useEffect(() => {
     const defaultType = pitcherData?.arsenal?.[0]?.value || "FF";
-    setPitches(
-      Array.from({ length: seqLength }).map(() => ({
-        type: defaultType,
-        zone: "正中",
-      }))
-    );
+
+    setPitches((prev) => {
+      // 防呆檢查：判斷是不是「更換了投手」
+      // 如果目前陣列裡的第一顆球，根本不在新投手的武器庫裡，代表換人了
+      const isPitcherChanged =
+        prev.length > 0 &&
+        pitcherData?.arsenal &&
+        !pitcherData.arsenal.some((pt) => pt.value === prev[0].type);
+
+      // 情境 A：初次載入 或 換了投手 -> 整組重置
+      if (prev.length === 0 || isPitcherChanged) {
+        return Array.from({ length: seqLength }).map(() => ({
+          type: defaultType,
+          zone: "正中",
+        }));
+      }
+
+      // 情境 B：使用者按下「+」增加球數 -> 保留舊資料，只在尾端新增
+      if (seqLength > prev.length) {
+        const additions = Array.from({ length: seqLength - prev.length }).map(
+          () => ({
+            type: defaultType,
+            zone: "正中",
+          })
+        );
+        return [...prev, ...additions];
+      }
+
+      // 情境 C：使用者按下「-」減少球數 -> 保留舊資料，截斷尾端多餘的球
+      if (seqLength < prev.length) {
+        return prev.slice(0, seqLength);
+      }
+
+      return prev;
+    });
+
+    // 只要配球長度或投手有變，就清空下方的預測結果畫面
     setSimResults([]);
   }, [seqLength, pitcherData]);
 
