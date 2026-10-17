@@ -54,32 +54,28 @@ export default function PitcherProvider({ children }) {
         pitcherData: pitchers[selectedPitcherId],
       }}
     >
-      {/* 🌟 加入 overflowX: "hidden" 徹底杜絕整個網頁的水平卷軸 */}
-      <div
-        className="container"
-        style={{ overflowX: "hidden", maxWidth: "100%" }}
-      >
-        {/* =========================================
-            🌟 修正 1：最上方的「投手選擇區塊」
-            強制改為上下排列 (column)，保證 100% 寬度不破版
-            ========================================= */}
+      {/* 🌟 修正 1：拔除 maxWidth: "100%"，讓畫面恢復置中且適當寬度 */}
+      <div className="container" style={{ overflowX: "hidden" }}>
+        {/* 🌟 修正 2：拔除 flexDirection: "column"，讓桌機版恢復左右並排。手機版會由 globals.css 自動接管變成上下排列 */}
         <div
           className="controls"
           style={{
             display: "flex",
-            flexDirection: "column",
-            gap: "10px",
-            padding: "15px",
+            alignItems: "center", // 恢復垂直置中對齊
+            gap: "15px",
+            padding: "15px 25px",
             background: "#fff",
             borderRadius: "12px",
             boxShadow: "0 4px 6px rgba(0,0,0,0.05)",
             marginBottom: "20px",
           }}
         >
-          <strong style={{ fontSize: "16px", color: "#555" }}>
+          <strong
+            style={{ fontSize: "16px", color: "#555", whiteSpace: "nowrap" }}
+          >
             對戰組合 (Matchup)：
           </strong>
-          <div style={{ width: "100%" }}>
+          <div style={{ flex: 1, minWidth: "250px" }}>
             <Select
               value={
                 pitcherOptions.find((opt) => opt.value === selectedPitcherId) ||
@@ -93,17 +89,13 @@ export default function PitcherProvider({ children }) {
               isSearchable={true}
               placeholder="請輸入英文搜尋投手 (Search Pitcher)..."
               styles={selectStyles}
-              // 🌟 終極破框魔法：讓選單渲染在 body 標籤上
               menuPortalTarget={isMounted ? document.body : null}
               menuPosition="fixed"
             />
           </div>
         </div>
 
-        {/* =========================================
-            🌟 修正 2：頁籤按鈕 (Tabs)
-            加入 flexWrap: "wrap"，當手機螢幕太窄時，按鈕會自動掉到下一行！
-            ========================================= */}
+        {/* 頁籤按鈕 (Tabs) 維持自動換行的設定 */}
         <div
           className="tab-navigation"
           style={{
@@ -116,7 +108,6 @@ export default function PitcherProvider({ children }) {
           <Link
             href="/"
             className={pathname === "/" ? "tab-btn active" : "tab-btn"}
-            // flex: "1 1 120px" 代表按鈕會自適應拉伸，但最小不低於 120px
             style={{ flex: "1 1 120px", padding: "12px 10px" }}
           >
             📊 實戰打席分析
