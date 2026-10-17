@@ -92,13 +92,16 @@ export default function InteractivePage() {
     );
 
     try {
-      // 1. 組合完整的配球序列 (歷史軌跡 + 畫面上正在設定的這一顆)
+      // 🌟 關鍵：將每顆歷史球的 result 一併帶入，並附加當下設定球
       const currentPitchesPayload = [
-        ...sequence.map((p) => ({ type: p.type, zone: p.zone })),
+        ...sequence.map((p) => ({
+          type: p.type,
+          zone: p.zone,
+          result: p.result, // 👈 傳入已發生的反應 (Take / Whiff / Foul)
+        })),
         { type: currentType, zone: currentZone },
       ];
 
-      // 2. 呼叫正確的路由
       const response = await fetch(`${API_BASE_URL}/api/simulate_sequence`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -106,15 +109,15 @@ export default function InteractivePage() {
           pitcher_id: pitcherId,
           stand: selectedStand,
           adv_stats: batter?.adv_stats || {},
-          pitches: currentPitchesPayload, // 🌟 傳送整包正確格式的陣列
+          b_count: bCount, // 👈 傳入前端精確計算的壞球數
+          s_count: sCount, // 👈 傳入前端精確計算的好球數
+          pitches: currentPitchesPayload,
         }),
       });
 
       if (!response.ok) throw new Error("API 回應錯誤");
 
       const data = await response.json();
-
-      // 3. 從後端回傳的結果中，抓取「最後一顆球」的機率作為打者反應選項
       const lastResult = data.results[data.results.length - 1];
       setCurrentProbs([
         parseFloat(lastResult.probs.take),
@@ -127,7 +130,6 @@ export default function InteractivePage() {
       setStep("outcome");
     } catch (error) {
       console.warn("⚠️ API 連線失敗，套用合理測試數據", error);
-      // 只有在真的斷線或發生錯誤時，才會給這組 35.2% 的防呆數據
       setCurrentProbs([35.2, 25.1, 22.4, 12.0, 5.3]);
       setStep("outcome");
     } finally {

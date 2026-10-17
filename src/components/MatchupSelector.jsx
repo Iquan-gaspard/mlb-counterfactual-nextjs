@@ -46,6 +46,7 @@ export default function MatchupSelector({
         </strong>
         <div style={{ width: "100%" }}>
           <Select
+            instanceId="batter-select"
             value={
               batterOptions.find((opt) => opt.value === selectedBatterId) ||
               null

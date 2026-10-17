@@ -10,6 +10,7 @@ import PitchResultCard from "../../components/PitchResultCard";
 import MatchupSelector from "../../components/MatchupSelector";
 import PitchSetupSelects from "../../components/PitchSetupSelects";
 import useBatters from "../../hooks/useBatters";
+import { supabase } from "../../lib/supabase";
 
 export default function BuilderPage() {
   const { pitcherId, pitcherData } = useContext(PitcherContext);
@@ -80,6 +81,16 @@ export default function BuilderPage() {
       let probs = [];
 
       try {
+        const pastPitchesPayload = finalResults.map((r) => ({
+          type: r.type,
+          zone: r.zone,
+          result: r.selected_result, // 👈 傳入自動推演選定的結果
+        }));
+        pastPitchesPayload.push({
+          type: currentPitch.type,
+          zone: currentPitch.zone,
+        });
+
         const response = await fetch(`${API_BASE_URL}/api/simulate_sequence`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -87,7 +98,9 @@ export default function BuilderPage() {
             pitcher_id: pitcherId,
             stand: selectedStand,
             adv_stats: batter?.adv_stats || {},
-            pitches: pitches.slice(0, i + 1),
+            b_count: currentB, // 👈 傳入推演當下的壞球數
+            s_count: currentS, // 👈 傳入推演當下的好球數
+            pitches: pastPitchesPayload,
           }),
         });
 
@@ -167,6 +180,21 @@ export default function BuilderPage() {
     }
 
     setSimResults(finalResults);
+    try {
+      const { data, error } = await supabase.from("pitch_histories").insert([
+        {
+          pitcher_id: pitcherId,
+          batter_id: selectedBatterId,
+          stand: selectedStand,
+          sequence_data: finalResults, // 🌟 直接把這包超複雜的 JSON 陣列丟給 Supabase
+        },
+      ]);
+
+      if (error) throw error;
+      console.log("✅ 成功寫入 Supabase 資料庫！");
+    } catch (dbError) {
+      console.error("❌ 寫入資料庫失敗：", dbError);
+    }
     setIsSimulating(false);
   };
 

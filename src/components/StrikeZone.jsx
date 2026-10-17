@@ -60,7 +60,10 @@ export default function StrikeZone({ pitches = [], onZoneClick }) {
     <div
       style={{ display: "flex", flexDirection: "column", alignItems: "center" }}
     >
-      <div className="pitch-plot-container">
+      <div
+        className="pitch-plot-container"
+        style={{ minWidth: "220px", minHeight: "280px" }}
+      >
         <div className="strike-zone">
           {renderCells()}
 

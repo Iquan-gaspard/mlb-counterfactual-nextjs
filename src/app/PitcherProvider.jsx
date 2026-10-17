@@ -77,6 +77,7 @@ export default function PitcherProvider({ children }) {
           </strong>
           <div style={{ flex: 1, minWidth: "250px" }}>
             <Select
+              instanceId="pitcher-select"
               value={
                 pitcherOptions.find((opt) => opt.value === selectedPitcherId) ||
                 null

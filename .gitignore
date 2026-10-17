@@ -39,3 +39,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+etl_pitchers_to_supabase.py
+etl_batters_to_supabase.py
+
+aa.txt
+mlb_pitch_data_2026_strictly_filtered_test.csv.gz
+
