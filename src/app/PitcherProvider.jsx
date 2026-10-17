@@ -1,30 +1,34 @@
-"use client"; // 🌟 Next.js 魔法：宣告這個元件在瀏覽器端執行，允許使用 useState
+"use client";
 import React, { useState, useEffect, createContext } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import Select from "react-select";
 
-// 🌟 使用 Node 環境變數來判斷 API 網址，解決以前 SSR 找不到 window 的問題
 export const API_BASE_URL =
   process.env.NODE_ENV === "development"
     ? "http://127.0.0.1:5000"
     : "https://baseball-web-game.onrender.com";
 
+// 🌟 新增 menuPortal 樣式，確保選單出竅後層級最高
 export const selectStyles = {
   menu: (provided) => ({ ...provided, zIndex: 9999 }),
+  menuPortal: (base) => ({ ...base, zIndex: 9999 }),
   control: (provided) => ({ ...provided, borderRadius: "6px" }),
 };
 
-// 建立全域狀態通道
 export const PitcherContext = createContext();
 
 export default function PitcherProvider({ children }) {
-  const pathname = usePathname(); // 取得目前網址，用來判斷哪個按鈕要亮起
+  const pathname = usePathname();
   const [pitchers, setPitchers] = useState({});
   const [selectedPitcherId, setSelectedPitcherId] = useState("808967");
   const [isLoading, setIsLoading] = useState(true);
 
+  // 🌟 破框魔法必備：確認元件已經掛載到瀏覽器上
+  const [isMounted, setIsMounted] = useState(false);
+
   useEffect(() => {
+    setIsMounted(true);
     async function fetchPitchers() {
       try {
         const response = await fetch(`${API_BASE_URL}/api/pitchers`);
@@ -50,10 +54,32 @@ export default function PitcherProvider({ children }) {
         pitcherData: pitchers[selectedPitcherId],
       }}
     >
-      <div className="container">
-        <div className="controls">
-          <strong style={{ fontSize: "18px" }}>對戰組合 (Matchup)：</strong>
-          <div style={{ flex: 1, minWidth: "250px" }}>
+      {/* 🌟 加入 overflowX: "hidden" 徹底杜絕整個網頁的水平卷軸 */}
+      <div
+        className="container"
+        style={{ overflowX: "hidden", maxWidth: "100%" }}
+      >
+        {/* =========================================
+            🌟 修正 1：最上方的「投手選擇區塊」
+            強制改為上下排列 (column)，保證 100% 寬度不破版
+            ========================================= */}
+        <div
+          className="controls"
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: "10px",
+            padding: "15px",
+            background: "#fff",
+            borderRadius: "12px",
+            boxShadow: "0 4px 6px rgba(0,0,0,0.05)",
+            marginBottom: "20px",
+          }}
+        >
+          <strong style={{ fontSize: "16px", color: "#555" }}>
+            對戰組合 (Matchup)：
+          </strong>
+          <div style={{ width: "100%" }}>
             <Select
               value={
                 pitcherOptions.find((opt) => opt.value === selectedPitcherId) ||
@@ -67,38 +93,58 @@ export default function PitcherProvider({ children }) {
               isSearchable={true}
               placeholder="請輸入英文搜尋投手 (Search Pitcher)..."
               styles={selectStyles}
+              // 🌟 終極破框魔法：讓選單渲染在 body 標籤上
+              menuPortalTarget={isMounted ? document.body : null}
+              menuPosition="fixed"
             />
           </div>
         </div>
 
-        <div className="tab-navigation">
+        {/* =========================================
+            🌟 修正 2：頁籤按鈕 (Tabs)
+            加入 flexWrap: "wrap"，當手機螢幕太窄時，按鈕會自動掉到下一行！
+            ========================================= */}
+        <div
+          className="tab-navigation"
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: "10px",
+            marginBottom: "20px",
+          }}
+        >
           <Link
             href="/"
             className={pathname === "/" ? "tab-btn active" : "tab-btn"}
+            // flex: "1 1 120px" 代表按鈕會自適應拉伸，但最小不低於 120px
+            style={{ flex: "1 1 120px", padding: "12px 10px" }}
           >
             📊 實戰打席分析
           </Link>
           <Link
             href="/builder"
             className={pathname === "/builder" ? "tab-btn active" : "tab-btn"}
+            style={{ flex: "1 1 120px", padding: "12px 10px" }}
           >
             🎯 傳統自由配球
           </Link>
-          {/* 🌟 加上這個全新互動版的按鈕 */}
           <Link
             href="/interactive"
             className={
               pathname === "/interactive" ? "tab-btn active" : "tab-btn"
             }
             style={{
+              flex: "1 1 120px",
+              padding: "12px 10px",
               backgroundColor: pathname === "/interactive" ? "#27ae60" : "",
+              color: pathname === "/interactive" ? "#fff" : "",
             }}
           >
             🎮 沉浸式配球推演
           </Link>
         </div>
 
-        {/* 下方的分頁內容 (History 或 Builder) 會被注入到這裡 */}
+        {/* 下方的分頁內容 */}
         <div className="dashboard">{children}</div>
       </div>
     </PitcherContext.Provider>

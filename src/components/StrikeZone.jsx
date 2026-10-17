@@ -43,6 +43,8 @@ export const ZONE_EN = {
   壞_挖地瓜: "In the Dirt",
 };
 
+// ... (上半部維持不變)
+
 export default function StrikeZone({ pitches = [], onZoneClick }) {
   const renderCells = () => {
     return Array.from({ length: 9 }).map((_, idx) => (
@@ -63,11 +65,10 @@ export default function StrikeZone({ pitches = [], onZoneClick }) {
           {renderCells()}
 
           {pitches.map((pitch, idx) => {
-            // 🌟 核心顏色邏輯：好球紅色、壞球綠色
-            const bgColor = pitch.isStrike ? "#e74c3c" : "#2ecc71"; // 紅色(Strike) / 綠色(Ball)
+            // 🌟 核心顏色邏輯：換成您指定的磚紅色(#c0392b)與深綠色(#27ae60)
+            const bgColor = pitch.isStrike ? "#c0392b" : "#27ae60";
             const isCurrent = pitch.isModified;
 
-            // 當前球加上粗黃色外框與放大效果，歷史球維持細白框
             const borderStyle = isCurrent
               ? "3px solid #f1c40f"
               : "1px solid rgba(255,255,255,0.7)";
@@ -99,7 +100,6 @@ export default function StrikeZone({ pitches = [], onZoneClick }) {
         </div>
       </div>
 
-      {/* 🌟 新增：好壞球圖例與英文翻譯 */}
       <div
         style={{
           marginTop: "15px",
@@ -114,12 +114,13 @@ export default function StrikeZone({ pitches = [], onZoneClick }) {
           boxShadow: "0 2px 5px rgba(0,0,0,0.05)",
         }}
       >
+        {/* 🌟 底部圖例的顏色也同步修改 */}
         <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
           <div
             style={{
               width: "12px",
               height: "12px",
-              backgroundColor: "#e74c3c",
+              backgroundColor: "#c0392b",
               borderRadius: "50%",
             }}
           ></div>
@@ -130,7 +131,7 @@ export default function StrikeZone({ pitches = [], onZoneClick }) {
             style={{
               width: "12px",
               height: "12px",
-              backgroundColor: "#2ecc71",
+              backgroundColor: "#27ae60",
               borderRadius: "50%",
             }}
           ></div>

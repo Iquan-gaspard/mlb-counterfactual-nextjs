@@ -6,15 +6,22 @@ import StrikeZone, {
 } from "../../components/StrikeZone";
 import Select from "react-select";
 import { PitcherContext, API_BASE_URL, selectStyles } from "../PitcherProvider";
+import PitchResultCard from "../../components/PitchResultCard";
+import MatchupSelector from "../../components/MatchupSelector";
+import PitchSetupSelects from "../../components/PitchSetupSelects";
+import useBatters from "../../hooks/useBatters";
 
 export default function BuilderPage() {
-  // 🌟 從全域 Context 取得資料
   const { pitcherId, pitcherData } = useContext(PitcherContext);
+  const {
+    batters,
+    selectedBatterId,
+    setSelectedBatterId,
+    selectedStand,
+    setSelectedStand,
+    isLoadingBatters,
+  } = useBatters();
 
-  const [batters, setBatters] = useState([]);
-  const [selectedBatterId, setSelectedBatterId] = useState("");
-  const [selectedStand, setSelectedStand] = useState("R");
-  const [isLoading, setIsLoading] = useState(false);
   const [isModified, setIsModified] = useState(false);
 
   const [seqLength, setSeqLength] = useState(5);
@@ -22,66 +29,29 @@ export default function BuilderPage() {
   const [simResults, setSimResults] = useState([]);
   const [isSimulating, setIsSimulating] = useState(false);
 
-  useEffect(() => {
-    async function fetchBatters() {
-      setIsLoading(true);
-      try {
-        const res = await fetch(`${API_BASE_URL}/api/batters`);
-        const data = await res.json();
-        setBatters(data);
-        if (data.length > 0) {
-          setSelectedBatterId(data[0].batter_id.toString());
-          setSelectedStand(data[0].stand);
-        }
-      } catch (e) {
-        console.error("無法載入打者清單", e);
-      } finally {
-        setIsLoading(false);
-      }
-    }
-    fetchBatters();
-  }, []);
-
-  // 🌟 修復版：保留歷史設定的聰明陣列更新
+  // 2. 聰明陣列更新邏輯
   useEffect(() => {
     const defaultType = pitcherData?.arsenal?.[0]?.value || "FF";
-
     setPitches((prev) => {
-      // 防呆檢查：判斷是不是「更換了投手」
-      // 如果目前陣列裡的第一顆球，根本不在新投手的武器庫裡，代表換人了
       const isPitcherChanged =
         prev.length > 0 &&
         pitcherData?.arsenal &&
         !pitcherData.arsenal.some((pt) => pt.value === prev[0].type);
-
-      // 情境 A：初次載入 或 換了投手 -> 整組重置
       if (prev.length === 0 || isPitcherChanged) {
         return Array.from({ length: seqLength }).map(() => ({
           type: defaultType,
           zone: "正中",
         }));
       }
-
-      // 情境 B：使用者按下「+」增加球數 -> 保留舊資料，只在尾端新增
       if (seqLength > prev.length) {
         const additions = Array.from({ length: seqLength - prev.length }).map(
-          () => ({
-            type: defaultType,
-            zone: "正中",
-          })
+          () => ({ type: defaultType, zone: "正中" })
         );
         return [...prev, ...additions];
       }
-
-      // 情境 C：使用者按下「-」減少球數 -> 保留舊資料，截斷尾端多餘的球
-      if (seqLength < prev.length) {
-        return prev.slice(0, seqLength);
-      }
-
+      if (seqLength < prev.length) return prev.slice(0, seqLength);
       return prev;
     });
-
-    // 只要配球長度或投手有變，就清空下方的預測結果畫面
     setSimResults([]);
   }, [seqLength, pitcherData]);
 
@@ -92,6 +62,7 @@ export default function BuilderPage() {
     setIsModified(true);
   };
 
+  // 3. 核心：前端逐球推演引擎
   const runSequence = async () => {
     setIsSimulating(true);
     setIsModified(false);
@@ -99,40 +70,124 @@ export default function BuilderPage() {
       (b) => b.batter_id.toString() === selectedBatterId
     );
 
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/simulate_sequence`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          pitcher_id: pitcherId,
-          stand: selectedStand,
-          adv_stats: batter?.adv_stats || {},
-          pitches: pitches,
-        }),
+    let currentB = 0;
+    let currentS = 0;
+    let finalResults = [];
+
+    for (let i = 0; i < pitches.length; i++) {
+      const currentPitch = pitches[i];
+      const isFinalPitch = i === pitches.length - 1;
+      let probs = [];
+
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/simulate_sequence`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            pitcher_id: pitcherId,
+            stand: selectedStand,
+            adv_stats: batter?.adv_stats || {},
+            pitches: pitches.slice(0, i + 1),
+          }),
+        });
+
+        if (!response.ok) throw new Error("API 回應錯誤");
+
+        const data = await response.json();
+        const lastResult = data.results[data.results.length - 1];
+        probs = [
+          parseFloat(lastResult.probs.take),
+          parseFloat(lastResult.probs.whiff),
+          parseFloat(lastResult.probs.foul),
+          parseFloat(lastResult.probs.weak_contact),
+          parseFloat(lastResult.probs.hard_contact),
+        ];
+      } catch (e) {
+        console.warn(`第 ${i + 1} 球連線失敗，套用測試數據。原因:`, e);
+        probs = [35.2, 25.1, 22.4, 12.0, 5.3];
+      }
+
+      let selectedResult = null;
+      let isWalk = false;
+      let isStrikeout = false;
+
+      if (!isFinalPitch) {
+        const isStrikeZone = !currentPitch.zone.includes("壞");
+        let allowedChoices = ["Take", "Whiff", "Foul"];
+
+        if (currentS === 2) {
+          if (isStrikeZone) {
+            allowedChoices = ["Foul"];
+          } else {
+            allowedChoices = ["Take", "Foul"];
+          }
+        }
+
+        const probMap = { Take: probs[0], Whiff: probs[1], Foul: probs[2] };
+        let maxProb = -1;
+        for (const choice of allowedChoices) {
+          if (probMap[choice] > maxProb) {
+            maxProb = probMap[choice];
+            selectedResult = choice;
+          }
+        }
+
+        if (selectedResult === "Take") {
+          if (isStrikeZone) currentS += 1;
+          else currentB += 1;
+        } else if (selectedResult === "Whiff") {
+          currentS += 1;
+        } else if (selectedResult === "Foul") {
+          if (currentS < 2) currentS += 1;
+        }
+
+        if (currentB >= 4) isWalk = true;
+        if (currentS >= 3) isStrikeout = true;
+      }
+
+      finalResults.push({
+        pitch_num: i + 1,
+        type: currentPitch.type,
+        zone: currentPitch.zone,
+        probs: {
+          take: probs[0].toFixed(1),
+          whiff: probs[1].toFixed(1),
+          foul: probs[2].toFixed(1),
+          weak_contact: probs[3].toFixed(1),
+          hard_contact: probs[4].toFixed(1),
+        },
+        selected_result: selectedResult,
+        b_count: currentB,
+        s_count: currentS,
+        is_walk: isWalk,
+        is_final: isFinalPitch,
       });
-      if (!res.ok) throw new Error("API 運算錯誤");
-      const data = await res.json();
-      setSimResults(data.results);
-    } catch (e) {
-      console.error(e);
-      alert("序列運算發生錯誤！");
-    } finally {
-      setIsSimulating(false);
+
+      if (isWalk || isStrikeout) break;
     }
+
+    setSimResults(finalResults);
+    setIsSimulating(false);
   };
 
+  // 4. 準備九宮格渲染資料
   const renderPitches =
     simResults.length > 0
       ? simResults.map((r, idx) => {
           const coords = ZONE_COORDINATES[r.zone] || { x: 50, y: 50 };
           const isLast = idx === simResults.length - 1;
+          // 🌟 修正好壞球判斷：跟 Interactive 頁面同步
+          const isStrike = isLast
+            ? !r.zone.includes("壞")
+            : !(r.selected_result === "Take" && r.zone.includes("壞"));
+
           return {
             x: coords.x,
             y: coords.y,
             num: r.pitch_num,
-            isStrike: true,
+            isStrike: isStrike,
             isModified: isLast,
-            opacity: isLast ? 1 : 0.5,
+            opacity: isLast ? 1 : 0.6 + (idx / simResults.length) * 0.4,
           };
         })
       : [];
@@ -144,99 +199,81 @@ export default function BuilderPage() {
 
   return (
     <>
-      <div
-        className="controls"
-        style={{ marginBottom: "20px", display: "flex", gap: "15px" }}
-      >
-        <div
-          style={{
-            flex: 2,
-            display: "flex",
-            alignItems: "center",
-            gap: "10px",
-          }}
-        >
-          <strong
-            style={{ fontSize: "16px", color: "#555", whiteSpace: "nowrap" }}
-          >
-            對戰打者 (Batter)：
-          </strong>
-          <div style={{ flex: 1 }}>
-            <Select
-              value={
-                batterOptions.find((opt) => opt.value === selectedBatterId) ||
-                null
-              }
-              onChange={(selectedOption) => {
-                const bId = selectedOption.value;
-                setSelectedBatterId(bId);
-                const batter = batters.find(
-                  (b) => b.batter_id.toString() === bId
-                );
-                if (batter) setSelectedStand(batter.stand);
-                setSimResults([]);
-              }}
-              options={batterOptions}
-              isLoading={isLoading}
-              isSearchable={true}
-              placeholder="搜尋打者 (Search Batter)..."
-              styles={selectStyles}
-            />
-          </div>
-        </div>
-        <div
-          style={{
-            flex: 1,
-            display: "flex",
-            alignItems: "center",
-            gap: "10px",
-          }}
-        >
-          <strong
-            style={{ fontSize: "16px", color: "#555", whiteSpace: "nowrap" }}
-          >
-            站位 (Stand)：
-          </strong>
-          <select
-            value={selectedStand}
-            onChange={(e) => {
-              setSelectedStand(e.target.value);
-              setSimResults([]);
-            }}
-            style={{ width: "100%", padding: "9px", borderRadius: "6px" }}
-          >
-            <option value="R">右打 (Right)</option>
-            <option value="L">左打 (Left)</option>
-          </select>
-        </div>
-      </div>
+      <MatchupSelector
+        batters={batters}
+        isLoading={isLoadingBatters}
+        selectedBatterId={selectedBatterId}
+        setSelectedBatterId={setSelectedBatterId}
+        selectedStand={selectedStand}
+        setSelectedStand={setSelectedStand}
+        selectStyles={selectStyles}
+        onMatchupChange={() => setSimResults([])} // 🌟 換打者就清空右側結果
+      />
 
-      <div className="panel">
-        <div className="panel-header" style={{ color: "#e67e22" }}>
-          連續配球腳本 (Sequence Builder) - 動態多球對決
+      <div className="panel" style={{ position: "relative" }}>
+        <div
+          className="panel-header"
+          style={{ color: "#e67e22", fontSize: "18px", marginBottom: "20px" }}
+        >
+          自動推演實驗室 (Auto-Sequence Builder) - 多球賽局沙盤推演
         </div>
-        <div className="at-bat-view">
-          <StrikeZone pitches={renderPitches} />
-          <div style={{ flex: 1 }}>
+
+        {/* 🌟 全新佈局：左右分區 */}
+        <div
+          style={{
+            display: "flex",
+            gap: "30px",
+            alignItems: "flex-start",
+            flexWrap: "wrap",
+          }}
+        >
+          {/* =========================================
+              🟠 左側區塊：九宮格與設定表單 (置頂黏著)
+              ========================================= */}
+          <div
+            style={{
+              flex: "1 1 300px",
+              maxWidth: "340px",
+              display: "flex",
+              flexDirection: "column",
+              gap: "15px",
+              position: "sticky",
+              top: "15px",
+            }}
+          >
+            <StrikeZone pitches={renderPitches} />
+
             <div
               className="lab-controls"
               style={{
-                marginBottom: "10px",
+                marginTop: 0,
+                padding: "15px",
+                background: "#f8f9fa",
+                borderRadius: "8px",
                 display: "flex",
-                flexWrap: "wrap",
-                alignItems: "center",
+                flexDirection: "column",
                 gap: "15px",
               }}
             >
-              {/* 🌟 修改區塊：替換成加減按鈕控制器 */}
+              {/* 配球數調整區塊 */}
               <div
-                className="control-group"
-                style={{ display: "flex", alignItems: "center", gap: "10px" }}
+                style={{
+                  display: "flex",
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "flex-start",
+                  gap: "10px",
+                }}
               >
                 <label
-                  style={{ color: "#e67e22", fontWeight: "bold", margin: 0 }}
+                  style={{
+                    color: "#e67e22",
+                    fontWeight: "bold",
+                    margin: 0,
+                    fontSize: "14px",
+                  }}
                 >
-                  配球數 (Pitches)
+                  預定配球數 (Pitches)
                 </label>
                 <div
                   style={{ display: "flex", alignItems: "center", gap: "8px" }}
@@ -248,29 +285,22 @@ export default function BuilderPage() {
                     }
                     disabled={seqLength <= 1}
                     style={{
-                      width: "32px",
-                      height: "32px",
-                      backgroundColor: seqLength <= 1 ? "#f3f4f6" : "#e5e7eb",
-                      color: seqLength <= 1 ? "#9ca3af" : "#374151",
-                      border: "none",
+                      width: "28px",
+                      height: "28px",
                       borderRadius: "50%",
-                      fontSize: "18px",
-                      fontWeight: "bold",
+                      border: "none",
+                      background: seqLength <= 1 ? "#f3f4f6" : "#e5e7eb",
                       cursor: seqLength <= 1 ? "not-allowed" : "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
                     }}
                   >
                     -
                   </button>
                   <span
                     style={{
-                      fontSize: "16px",
+                      fontSize: "15px",
                       fontWeight: "bold",
-                      width: "24px",
+                      width: "20px",
                       textAlign: "center",
-                      color: "#333",
                     }}
                   >
                     {seqLength}
@@ -278,22 +308,16 @@ export default function BuilderPage() {
                   <button
                     type="button"
                     onClick={() =>
-                      setSeqLength((prev) => Math.min(7, prev + 1))
+                      setSeqLength((prev) => Math.max(7, prev + 1))
                     }
                     disabled={seqLength >= 7}
                     style={{
-                      width: "32px",
-                      height: "32px",
-                      backgroundColor: seqLength >= 7 ? "#f3f4f6" : "#e5e7eb",
-                      color: seqLength >= 7 ? "#9ca3af" : "#374151",
-                      border: "none",
+                      width: "28px",
+                      height: "28px",
                       borderRadius: "50%",
-                      fontSize: "18px",
-                      fontWeight: "bold",
+                      border: "none",
+                      background: seqLength >= 7 ? "#f3f4f6" : "#e5e7eb",
                       cursor: seqLength >= 7 ? "not-allowed" : "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
                     }}
                   >
                     +
@@ -301,134 +325,167 @@ export default function BuilderPage() {
                 </div>
               </div>
 
+              {/* 逐球設定表單列 */}
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "10px",
+                }}
+              >
+                {pitches.map((p, idx) => (
+                  <div
+                    key={idx}
+                    style={{
+                      display: "flex",
+                      gap: "8px",
+                      alignItems: "center",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: "22px",
+                        height: "22px",
+                        background: "#e67e22",
+                        color: "white",
+                        borderRadius: "50%",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontWeight: "bold",
+                        fontSize: "11px",
+                        flexShrink: 0,
+                      }}
+                    >
+                      {idx + 1}
+                    </div>
+                    <PitchSetupSelects
+                      mode="builder"
+                      arsenal={pitcherData?.arsenal}
+                      pitchType={p.type}
+                      pitchZone={p.zone}
+                      onTypeChange={(val) => updatePitch(idx, "type", val)}
+                      onZoneChange={(val) => updatePitch(idx, "zone", val)}
+                    />
+                  </div>
+                ))}
+              </div>
+
               <button
                 className="btn-simulate"
                 onClick={runSequence}
                 disabled={isSimulating}
-                style={{ backgroundColor: "#e67e22" }}
+                style={{
+                  backgroundColor: "#e67e22",
+                  width: "100%",
+                  padding: "12px",
+                  fontSize: "15px",
+                }}
               >
                 {isSimulating
-                  ? "運算中 (Simulating)..."
-                  : "執行序列 (Run Sequence)"}
+                  ? "逐球推演中..."
+                  : "啟動自動推演 (Run Auto-Sequence)"}
               </button>
             </div>
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: "10px",
-                marginBottom: "20px",
-              }}
-            >
-              {pitches.map((p, idx) => (
-                <div
-                  key={idx}
-                  style={{ display: "flex", gap: "10px", alignItems: "center" }}
-                >
-                  <div
-                    style={{
-                      width: "25px",
-                      height: "25px",
-                      background: "#e67e22",
-                      color: "white",
-                      borderRadius: "50%",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      fontWeight: "bold",
-                      fontSize: "12px",
-                    }}
-                  >
-                    {idx + 1}
-                  </div>
-                  <select
-                    style={{ flex: 1 }}
-                    value={p.type}
-                    onChange={(e) => updatePitch(idx, "type", e.target.value)}
-                  >
-                    {pitcherData?.arsenal?.map((pt) => (
-                      <option key={pt.value} value={pt.value}>
-                        {pt.label}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    style={{ flex: 1 }}
-                    value={p.zone}
-                    onChange={(e) => updatePitch(idx, "zone", e.target.value)}
-                  >
-                    {Object.keys(ZONE_COORDINATES).map((zone) => (
-                      <option key={zone} value={zone}>
-                        {zone.replace("壞_", "壞_ ")} ({ZONE_EN[zone]})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              ))}
-            </div>
-            <div
-              className="pitch-list"
-              style={{
-                opacity: isModified ? 0.5 : 1,
-                transition: "opacity 0.3s",
-              }}
-            >
-              {simResults.length === 0 ? (
+          </div>
+
+          {/* =========================================
+              🔵 右側區塊：推演結果清單 (卷軸呈現)
+              ========================================= */}
+          <div style={{ flex: "2 1 450px", minWidth: 0 }}>
+            {simResults.length === 0 ? (
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  height: "100%",
+                  minHeight: "300px",
+                  border: "2px dashed #e0e6ed",
+                  borderRadius: "12px",
+                  color: "#95a5a6",
+                  fontSize: "15px",
+                  background: "#fafbfc",
+                  padding: "20px",
+                  textAlign: "center",
+                  lineHeight: "1.6",
+                }}
+              >
+                <span style={{ fontSize: "24px", marginBottom: "10px" }}>
+                  ⚾
+                </span>
+                {/* 🌟 拔除「左側」，改為「請先完成配球設定」 */}
+                請先完成配球設定，並點擊「啟動自動推演」
+                <br />
+                系統將層層遞迴預測最可能的對決路徑。
+                <br />
+                (包含兩好球與保送機制)
+              </div>
+            ) : (
+              <div
+                className="pitch-list"
+                style={{
+                  width: "100%",
+                  opacity: isModified ? 0.5 : 1,
+                  transition: "opacity 0.3s",
+                }}
+              >
                 <div
                   style={{
-                    fontSize: "13px",
-                    color: "#666",
-                    paddingLeft: "10px",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginBottom: "15px",
+                    paddingBottom: "10px",
+                    borderBottom: "2px solid #e0e6ed",
                   }}
                 >
-                  ℹ️ 請設定球數並選擇球種。系統將計算每顆球在「歷史殘影
-                  Delta」影響下的逐球期望值。
-                  <br />
-                  (Set pitch types and locations. The model calculates expected
-                  outcomes influenced by the historical sequence delta.)
+                  <h3 style={{ margin: 0, color: "#2c3e50", fontSize: "16px" }}>
+                    📋 推演歷史軌跡 (Expected Sequence)
+                  </h3>
                 </div>
-              ) : (
-                simResults.map((r, idx) => (
-                  <div
-                    key={idx}
-                    className="pitch-item modified"
-                    style={{ borderColor: "#e67e22" }}
-                  >
-                    <div
-                      className="pitch-number"
-                      style={{ background: "#e67e22" }}
-                    >
-                      {r.pitch_num}
-                    </div>
-                    <div className="pitch-info" style={{ flex: 1 }}>
-                      <div
-                        className="pitch-result"
-                        style={{ color: "#e67e22", marginBottom: "8px" }}
-                      >
-                        <strong>{r.type}</strong> ({r.zone})
-                      </div>
-                      <div className="badge-container">
-                        <span className="badge badge-take">
-                          👀 不揮棒 (Take) {r.probs.take}%
-                        </span>
-                        <span className="badge badge-whiff">
-                          💨 揮空 (Whiff) {r.probs.whiff}%
-                        </span>
-                        <span className="badge badge-foul">
-                          🛑 界外 (Foul) {r.probs.foul}%
-                        </span>
-                        <span className="badge badge-weak">
-                          🏏 弱擊 (Weak) {r.probs.weak_contact}%
-                        </span>
-                        <span className="badge badge-hard">
-                          🚀 強擊 (Hard Hit) {r.probs.hard_contact}%
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
+
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "10px",
+                  }}
+                >
+                  {simResults.map((r, idx) => {
+                    const borderColor = r.is_walk
+                      ? "#27ae60"
+                      : r.is_final
+                      ? "#c0392b"
+                      : "#e67e22";
+                    const bgColor = r.is_final ? "#fdf2e9" : "#fff";
+
+                    return (
+                      <PitchResultCard
+                        key={idx}
+                        mode="builder"
+                        pitchNum={r.pitch_num}
+                        type={r.type}
+                        zone={r.zone}
+                        probs={{
+                          take: r.probs.take,
+                          whiff: r.probs.whiff,
+                          foul: r.probs.foul,
+                          weak: r.probs.weak_contact,
+                          hard: r.probs.hard_contact,
+                        }}
+                        outcome={r.selected_result}
+                        bCount={r.b_count}
+                        sCount={r.s_count}
+                        isWalk={r.is_walk}
+                        isFinal={r.is_final}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

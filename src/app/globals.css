@@ -468,29 +468,60 @@ select {
 }
 
 /* =========================================================
-        ✨ 3. 手機版極致壓縮排版 (針對螢幕寬度小於 600px 的設備)
-        ========================================================= */
-@media screen and (max-width: 600px) {
-  body {
-    padding: 10px; /* 縮小螢幕最外圍的空白 */
+   📱 手機版 RWD 終極修復 (螢幕寬度小於 768px 觸發)
+   ========================================================= */
+@media screen and (max-width: 768px) {
+  /* 1. 讓整體外框不再限制內容，容許下拉選單浮出 */
+  .container {
+    overflow: visible !important;
   }
 
-  .controls,
-  .panel {
-    padding: 15px !important; /* 縮小卡片內邊距，把空間還給內容 */
+  /* 2. 上方對戰組合區塊：強制改為上下排列 */
+  .controls {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    padding: 15px !important;
+    gap: 15px !important;
   }
 
-  .tab-navigation {
-    flex-direction: column; /* 手機螢幕太窄，把兩個頁籤按鈕上下疊放 */
+  /* 解除原本的 flex 比例限制，讓下拉選單吃滿 100% 寬度 */
+  .controls > div {
+    flex: none !important;
+    width: 100% !important;
+    display: flex !important;
+    flex-direction: column !important; /* 標籤跟選單也上下排 */
+    gap: 8px !important;
   }
 
-  .tab-btn {
-    width: 100%;
+  /* 3. 解決標題列擠壓：標題與好壞球數改為上下排列 */
+  .panel-header {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 10px !important;
   }
 
-  /* 確保下拉選單超長的文字 (例如日期與打者名字) 不會撐爆螢幕 */
+  /* 4. 解決左右雙欄佈局：在手機上強制變為單欄垂直排列 */
+  .at-bat-view > div {
+    flex-direction: column !important;
+  }
+
+  /* 解除左側黏著(Sticky)，在手機上自然往下捲 */
+  .at-bat-view > div > div:first-child {
+    position: static !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    flex: none !important;
+  }
+
+  /* 確保九宮格在手機上依然置中 */
+  .pitch-plot-container {
+    margin: 0 auto !important;
+  }
+
+  /* 5. 確保原生的 select 選單文字不會超出畫面 */
   select {
+    max-width: 100% !important;
     text-overflow: ellipsis;
-    padding: 8px;
+    padding: 10px !important; /* 手機版手指好按一點 */
   }
 }
