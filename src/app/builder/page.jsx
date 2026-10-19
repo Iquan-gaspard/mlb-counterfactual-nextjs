@@ -29,39 +29,39 @@ export default function BuilderPage() {
   const [pitches, setPitches] = useState([]);
   const [simResults, setSimResults] = useState([]);
   const [isSimulating, setIsSimulating] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveStatus, setSaveStatus] = useState(""); // "" | "success" | "error"
+  // const [isSaving, setIsSaving] = useState(false);
+  // const [saveStatus, setSaveStatus] = useState(""); // "" | "success" | "error"
 
   // 🌟 2. 獨立的手動儲存函式
-  const handleSaveRecord = async () => {
-    if (simResults.length === 0) return;
-    setIsSaving(true);
-    setSaveStatus("");
+  // const handleSaveRecord = async () => {
+  //   if (simResults.length === 0) return;
+  //   setIsSaving(true);
+  //   setSaveStatus("");
 
-    try {
-      const response = await fetch("/api/history", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          pitcher_id: pitcherId,
-          batter_id: selectedBatterId,
-          stand: selectedStand,
-          sequence_data: simResults,
-        }),
-      });
+  //   try {
+  //     const response = await fetch("/api/history", {
+  //       method: "POST",
+  //       headers: { "Content-Type": "application/json" },
+  //       body: JSON.stringify({
+  //         pitcher_id: pitcherId,
+  //         batter_id: selectedBatterId,
+  //         stand: selectedStand,
+  //         sequence_data: simResults,
+  //       }),
+  //     });
 
-      if (!response.ok) throw new Error("儲存失敗");
+  //     if (!response.ok) throw new Error("儲存失敗");
 
-      setSaveStatus("success");
-      setTimeout(() => setSaveStatus(""), 3000);
-    } catch (err) {
-      console.error("❌ 寫入資料庫失敗：", err);
-      setSaveStatus("error");
-      setTimeout(() => setSaveStatus(""), 3000);
-    } finally {
-      setIsSaving(false);
-    }
-  };
+  //     setSaveStatus("success");
+  //     setTimeout(() => setSaveStatus(""), 3000);
+  //   } catch (err) {
+  //     console.error("❌ 寫入資料庫失敗：", err);
+  //     setSaveStatus("error");
+  //     setTimeout(() => setSaveStatus(""), 3000);
+  //   } finally {
+  //     setIsSaving(false);
+  //   }
+  // };
 
   // 2. 聰明陣列更新邏輯
   useEffect(() => {
@@ -496,7 +496,7 @@ export default function BuilderPage() {
                     📋 推演歷史軌跡 (Expected Sequence)
                   </h3>
                   {/* 🌟 新增：手動儲存按鈕 */}
-                  <button
+                  {/* <button
                     onClick={handleSaveRecord}
                     disabled={isSaving || simResults.length === 0}
                     style={{
@@ -527,7 +527,7 @@ export default function BuilderPage() {
                       : saveStatus === "error"
                       ? "❌ 儲存失敗"
                       : "💾 儲存此配球紀錄"}
-                  </button>
+                  </button> */}
                 </div>
 
                 <div
