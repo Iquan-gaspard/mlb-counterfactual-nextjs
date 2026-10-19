@@ -10,6 +10,7 @@ import PitchResultCard from "../../components/PitchResultCard";
 import MatchupSelector from "../../components/MatchupSelector";
 import PitchSetupSelects from "../../components/PitchSetupSelects";
 import useBatters from "../../hooks/useBatters";
+import { getPitchPhysics } from "../../lib/pitchUtils";
 
 export default function InteractivePage() {
   const { pitcherId, pitcherData } = useContext(PitcherContext);
@@ -92,30 +93,58 @@ export default function InteractivePage() {
     );
 
     try {
-      // 🌟 關鍵：將每顆歷史球的 result 一併帶入，並附加當下設定球
+      // 🌟 1. 歷史球逐一填入該位置的物理數值
       const currentPitchesPayload = [
-        ...sequence.map((p) => ({
-          type: p.type,
-          zone: p.zone,
-          result: p.result, // 👈 傳入已發生的反應 (Take / Whiff / Foul)
-        })),
-        { type: currentType, zone: currentZone },
+        ...sequence.map((p) => {
+          const phys = getPitchPhysics(pitcherData, p.type, p.zone);
+          return {
+            type: p.type,
+            zone: p.zone,
+            result: p.result,
+            speed: phys.speed,
+            pfx_x: phys.pfx_x,
+            pfx_z: phys.pfx_z,
+          };
+        }),
+        // 🌟 2. 當前要投的這顆球也填入物理數值
+        (() => {
+          const phys = getPitchPhysics(pitcherData, currentType, currentZone);
+          return {
+            type: currentType,
+            zone: currentZone,
+            speed: phys.speed,
+            pfx_x: phys.pfx_x,
+            pfx_z: phys.pfx_z,
+          };
+        })(),
       ];
 
-      const response = await fetch(`${API_BASE_URL}/api/simulate_sequence`, {
+      // 🌟 3. 送出請求，同時帶上投手的 arm_angle
+      const response = await fetch("/api/simulate_sequence", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           pitcher_id: pitcherId,
+          batter_id: selectedBatterId,
           stand: selectedStand,
-          adv_stats: batter?.adv_stats || {},
-          b_count: bCount, // 👈 傳入前端精確計算的壞球數
-          s_count: sCount, // 👈 傳入前端精確計算的好球數
-          pitches: currentPitchesPayload,
+          b_count: bCount,
+          s_count: sCount,
+          pitches: currentPitchesPayload.map((p) => ({
+            type: p.type,
+            zone: p.zone,
+            result: p.result,
+          })),
         }),
       });
 
-      if (!response.ok) throw new Error("API 回應錯誤");
+      if (!response.ok) {
+        const errorDetail = await response.text();
+        console.error(
+          `🚨 [BFF Proxy 拒絕存取] HTTP 狀態碼: ${response.status}`,
+          errorDetail
+        );
+        throw new Error(`API 回應錯誤: HTTP ${response.status}`);
+      }
 
       const data = await response.json();
       const lastResult = data.results[data.results.length - 1];

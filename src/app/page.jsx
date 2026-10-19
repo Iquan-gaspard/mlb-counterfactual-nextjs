@@ -5,340 +5,470 @@ import StrikeZone, {
   ZONE_EN,
 } from "../components/StrikeZone";
 import Select from "react-select";
-import { PitcherContext, API_BASE_URL, selectStyles } from "./PitcherProvider";
+import { PitcherContext, selectStyles } from "./PitcherProvider";
 
-export default function HistoryPage() {
-  // 🌟 從全域 Context 取得投手資料，取代原本的 props
+export default function ActualAtBatPage() {
   const { pitcherId, pitcherData } = useContext(PitcherContext);
 
   const [atBats, setAtBats] = useState([]);
-  const [selectedAbId, setSelectedAbId] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+  const [selectedAtBatId, setSelectedAtBatId] = useState("");
+  const [isLoadingAtBats, setIsLoadingAtBats] = useState(false);
 
-  const [simMode, setSimMode] = useState("last");
-  const [newPitchType, setNewPitchType] = useState("");
-  const [newPitchZone, setNewPitchZone] = useState("正中");
-  const [simResult, setSimResult] = useState(null);
+  // 反事實實驗室狀態
+  const [simMode, setSimMode] = useState("last"); // "last" 決戰球 | "setup" 佈局球
+  const [currentType, setCurrentType] = useState("");
+  const [currentZone, setCurrentZone] = useState("正中");
   const [isSimulating, setIsSimulating] = useState(false);
+  const [isSimulated, setIsSimulated] = useState(false);
 
+  // 預測機率結果 (不揮棒, 揮空, 界外, 弱擊, 強擊)
+  const [cfProbs, setCfProbs] = useState(null);
+  const [origProbs, setOrigProbs] = useState(null);
+
+  // 1. 透過 BFF 取得該投手的實戰打席清單
   useEffect(() => {
-    if (!pitcherId) return;
     async function fetchAtBats() {
-      setIsLoading(true);
+      if (!pitcherId) return;
+      setIsLoadingAtBats(true);
+      setAtBats([]);
+      setSelectedAtBatId("");
+      setIsSimulated(false);
+      setCfProbs(null);
+      setOrigProbs(null);
+
       try {
-        const response = await fetch(`${API_BASE_URL}/api/atbats/${pitcherId}`);
+        const response = await fetch(`/api/atbats?pitcher_id=${pitcherId}`);
+        if (!response.ok) throw new Error("取得實戰打席失敗");
         const data = await response.json();
         setAtBats(data);
-        if (data.length > 0) setSelectedAbId(data[0].ab_id);
-        else setSelectedAbId("");
-        setSimResult(null);
+        if (data && data.length > 0) {
+          setSelectedAtBatId(data[0].ab_id);
+        }
       } catch (error) {
-        console.error("無法載入打席:", error);
+        console.error("無法載入實戰打席：", error);
       } finally {
-        setIsLoading(false);
+        setIsLoadingAtBats(false);
       }
     }
+
     fetchAtBats();
+  }, [pitcherId]);
 
+  // 當投手球種庫載入時，設定預設球種
+  useEffect(() => {
     if (pitcherData?.arsenal?.length > 0) {
-      setNewPitchType(pitcherData.arsenal[0].value);
+      setCurrentType(pitcherData.arsenal[0].value);
     }
-  }, [pitcherId, pitcherData]);
+  }, [pitcherData]);
 
-  const abOptions = atBats.map((ab) => ({ value: ab.ab_id, label: ab.label }));
-  const currentAb = atBats.find((ab) => ab.ab_id === selectedAbId);
-  const currentSequence = currentAb ? currentAb.sequence : [];
+  // 當前選中的打席資料
+  const currentAtBat =
+    atBats.find((ab) => ab.ab_id === selectedAtBatId) || atBats[0];
 
-  let renderPitches = currentSequence.map((p) => ({
-    ...p,
-    isModified: false,
-    opacity: 1,
-  }));
-
-  if (currentSequence.length > 0) {
-    const isLast = currentSequence.length - 1;
-    const isSecondLast = currentSequence.length - 2;
-    const coords = ZONE_COORDINATES[newPitchZone] || { x: 50, y: 50 };
-
-    if (simMode === "last") {
-      renderPitches.forEach((p, idx) => {
-        if (idx !== isLast) p.opacity = 0.3;
-        if (idx === isLast) {
-          p.x = coords.x;
-          p.y = coords.y;
-          p.isModified = true;
-          p.name = newPitchType;
-        }
-      });
-    } else if (simMode === "second_last" && currentSequence.length >= 2) {
-      renderPitches.forEach((p, idx) => {
-        if (idx < isSecondLast) p.opacity = 0.3;
-        if (idx === isSecondLast) {
-          p.x = coords.x;
-          p.y = coords.y;
-          p.isModified = true;
-          p.name = newPitchType;
-        }
-      });
-    }
-  }
-
-  const runSimulation = async () => {
-    if (simMode === "second_last" && currentSequence.length < 2) {
-      alert("此打席只有一球，無法改變佈局球 (N-1)！");
-      setSimMode("last");
+  // 2. 執行反事實推演 (呼叫 Next.js 同源 BFF 代理)
+  const handleReSimulate = async () => {
+    if (
+      !currentAtBat ||
+      !currentAtBat.sequence ||
+      currentAtBat.sequence.length < 2
+    ) {
+      alert("此打席球數不足以進行反事實推演");
       return;
     }
+
     setIsSimulating(true);
 
-    const getPhys = (pitchObj) => ({
-      speed: parseFloat(pitchObj.raw_speed) / 100.0,
-      px: pitchObj.raw_px,
-      pz: pitchObj.raw_pz,
-      pfx_x: pitchObj.raw_pfx_x,
-      pfx_z: pitchObj.raw_pfx_z,
-    });
-
-    let n2_data = { speed: 0.95, px: 0, pz: 0, pfx_x: 0, pfx_z: 0 };
-    let n1_data = { speed: 0.95, px: 0, pz: 0, pfx_x: 0, pfx_z: 0 };
-    let orig_data = { speed: 0.95, px: 0, pz: 0, pfx_x: 0, pfx_z: 0 };
-    let n1_out = [1, 0, 0];
-
-    const len = currentSequence.length;
-    if (len >= 3) n2_data = getPhys(currentSequence[len - 3]);
-    if (len >= 2) {
-      const n1 = currentSequence[len - 2];
-      n1_data = getPhys(n1);
-      const res = n1.result;
-      const isTake = [
-        "called_strike",
-        "ball",
-        "blocked_ball",
-        "pitchout",
-      ].includes(res)
-        ? 1
-        : 0;
-      const isWhiff = [
-        "swinging_strike",
-        "swinging_pitchout",
-        "swinging_strike_blocked",
-        "foul_tip",
-      ].includes(res)
-        ? 1
-        : 0;
-      const isFoul = ["foul", "foul_bunt"].includes(res) ? 1 : 0;
-      n1_out = [isTake, isWhiff, isFoul];
-    }
-    let bCount = 0,
-      sCount = 0;
-    if (len >= 1) {
-      orig_data = getPhys(currentSequence[len - 1]);
-      const parts = currentSequence[len - 1].count.split("-");
-      if (parts.length === 2) {
-        bCount = parseInt(parts[0].trim());
-        sCount = parseInt(parts[1].trim());
-      }
-    }
-
     try {
-      const response = await fetch(`${API_BASE_URL}/api/simulate`, {
+      // 🌟 前端只需要傳遞決策參數，不再傳送任何原始座標或 sequence 陣列！
+      const response = await fetch("/api/simulate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           pitcher_id: pitcherId,
+          ab_id: currentAtBat.ab_id,
           sim_mode: simMode,
-          pitch_type: newPitchType,
-          pitch_zone: newPitchZone,
-          stand: currentAb.stand,
-          adv_stats: currentAb.adv_stats,
-          b_count: bCount,
-          s_count: sCount,
-          n2_pitch: n2_data,
-          n1_pitch: n1_data,
-          n1_outcome: n1_out,
-          orig_pitch: orig_data,
+          pitch_type: currentType,
+          pitch_zone: currentZone,
         }),
       });
-      if (!response.ok) throw new Error("伺服器回應錯誤");
+
+      if (!response.ok) {
+        throw new Error(`模擬失敗: HTTP ${response.status}`);
+      }
+
       const result = await response.json();
-      setSimResult(result);
+      setCfProbs(result.cf_probs);
+      setOrigProbs(result.orig_probs);
+      setIsSimulated(true);
     } catch (error) {
-      console.error(error);
-      alert("模擬失敗，請檢查後端是否正常運作！");
+      console.error("反事實模擬出錯：", error);
+      alert("模擬推演失敗，請確認後端服務連線正常");
     } finally {
       setIsSimulating(false);
     }
   };
 
-  const renderMetric = (label, emoji, idx, isPitcherFriendly) => {
-    const origVal = simResult ? simResult.orig_probs[idx] : "--";
-    const newVal = simResult ? simResult.cf_probs[idx] : "--";
-    let colorClass = "";
-    if (simResult && isPitcherFriendly !== null) {
-      if (isPitcherFriendly && newVal > origVal) colorClass = "val-improve";
-      else if (!isPitcherFriendly && newVal < origVal)
-        colorClass = "val-improve";
-      else colorClass = "val-worsen";
-    }
-    return (
-      <div className="metric-card" key={idx}>
-        <div className="metric-title">
-          {emoji} {label}
-        </div>
-        <div className="metric-comparison">
-          {simResult && <span className="val-original">{origVal}%</span>}
-          <span className={`val-new ${colorClass}`}>
-            {newVal}
-            {simResult ? "%" : ""}
-          </span>
-        </div>
-      </div>
-    );
-  };
+  // 3. 準備九宮格渲染資料 (若是反事實模擬球，給予黃色光暈標記)
+  const renderPitches = currentAtBat?.sequence
+    ? currentAtBat.sequence.map((p, idx) => {
+        const isTarget =
+          (simMode === "last" && idx === currentAtBat.sequence.length - 1) ||
+          (simMode === "setup" && idx === currentAtBat.sequence.length - 2);
+
+        if (isTarget && isSimulated) {
+          const coords = ZONE_COORDINATES[currentZone] || { x: 50, y: 50 };
+          return {
+            x: coords.x,
+            y: coords.y,
+            num: p.num,
+            isStrike: !currentZone.includes("壞"),
+            isModified: true, // 帶有黃色高亮光暈
+            opacity: 1,
+          };
+        }
+
+        return {
+          x: p.x,
+          y: p.y,
+          num: p.num,
+          isStrike: p.isStrike,
+          isModified: isTarget,
+          opacity: isTarget ? 1 : 0.6,
+        };
+      })
+    : [];
+
+  const atBatOptions = atBats.map((ab) => ({
+    value: ab.ab_id,
+    label: ab.label,
+  }));
 
   return (
     <>
+      {/* 實戰打席下拉選單 */}
       <div
         className="controls"
         style={{
           marginBottom: "20px",
-          background: "transparent",
-          boxShadow: "none",
-          padding: "0 25px",
+          display: "flex",
           alignItems: "center",
+          gap: "10px",
         }}
       >
         <strong
-          style={{ fontSize: "16px", color: "#555", whiteSpace: "nowrap" }}
+          style={{ fontSize: "15px", color: "#555", whiteSpace: "nowrap" }}
         >
           選擇實戰打席 (Select At-Bat)：
         </strong>
         <div style={{ flex: 1 }}>
           <Select
-            value={abOptions.find((opt) => opt.value === selectedAbId) || null}
-            onChange={(selectedOption) => {
-              setSelectedAbId(selectedOption.value);
-              setSimResult(null);
+            instanceId="atbat-select"
+            value={
+              atBatOptions.find((opt) => opt.value === selectedAtBatId) || null
+            }
+            onChange={(opt) => {
+              setSelectedAtBatId(opt.value);
+              setIsSimulated(false);
+              setCfProbs(null);
+              setOrigProbs(null);
             }}
-            options={abOptions}
-            isLoading={isLoading}
+            options={atBatOptions}
+            isLoading={isLoadingAtBats}
             isSearchable={true}
-            placeholder="搜尋打者或日期 (Search Batter/Date)..."
-            noOptionsMessage={() => "無符合條件的打席 (No matching at-bats)"}
+            placeholder="搜尋打者或日期 (Search)..."
             styles={selectStyles}
           />
         </div>
       </div>
 
-      <div className="panel">
-        <div className="panel-header">實戰紀錄 (Original Sequence)</div>
-        <div className="at-bat-view">
-          <StrikeZone pitches={currentSequence} />
-          <div className="pitch-list">
-            {currentSequence.map((pitch, idx) => (
-              <div
-                key={idx}
-                className={`pitch-item ${pitch.isStrike ? "strike" : "ball"}`}
-              >
-                <div className="pitch-number">{pitch.num}</div>
-                <div className="pitch-info">
-                  <div className="pitch-result">
-                    {pitch.result}
-                    {pitch.result === "hit_into_play" && pitch.launch_speed && (
-                      <span
+      {/* 上半部：實戰紀錄 */}
+      <div className="panel" style={{ marginBottom: "25px" }}>
+        <div
+          className="panel-header"
+          style={{ fontSize: "18px", color: "#2c3e50" }}
+        >
+          實戰紀錄 (Original Sequence)
+        </div>
+        <div
+          style={{
+            display: "flex",
+            gap: "30px",
+            alignItems: "flex-start",
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ flex: "1 1 300px", maxWidth: "340px" }}>
+            <StrikeZone pitches={renderPitches} />
+          </div>
+
+          <div style={{ flex: "2 1 450px", minWidth: 0 }}>
+            <div
+              style={{ display: "flex", flexDirection: "column", gap: "10px" }}
+            >
+              {currentAtBat?.sequence?.map((p, idx) => (
+                <div
+                  key={idx}
+                  className="pitch-item modified"
+                  style={{
+                    borderColor: p.isStrike ? "#c0392b" : "#27ae60",
+                    background: "#fff",
+                    padding: "10px 14px",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "12px",
+                    }}
+                  >
+                    <div
+                      className="pitch-number"
+                      style={{
+                        background: p.isStrike ? "#c0392b" : "#27ae60",
+                        width: "26px",
+                        height: "26px",
+                        fontSize: "13px",
+                      }}
+                    >
+                      {p.num}
+                    </div>
+                    <div>
+                      <div
                         style={{
-                          color: "#e74c3c",
-                          fontSize: "0.9em",
+                          fontSize: "15px",
+                          color: "#333",
                           fontWeight: "bold",
-                          marginLeft: "6px",
                         }}
                       >
-                        🚀 EV: {pitch.launch_speed}
-                      </span>
-                    )}
+                        {p.result}{" "}
+                        {p.launch_speed && (
+                          <span style={{ color: "#e67e22", fontSize: "13px" }}>
+                            🚀 EV: {p.launch_speed}
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: "13px", color: "#666" }}>
+                        {p.speed} {p.type}
+                      </div>
+                    </div>
                   </div>
-                  <div className="pitch-details">
-                    <strong>{pitch.speed}</strong> {pitch.name}
-                  </div>
+                  <strong
+                    style={{
+                      fontSize: "16px",
+                      color: "#2c3e50",
+                      letterSpacing: "1px",
+                    }}
+                  >
+                    {p.count}
+                  </strong>
                 </div>
-                <div className="pitch-count">{pitch.count}</div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         </div>
       </div>
 
+      {/* 下半部：反事實實驗室 (Counterfactual Lab) */}
       <div className="panel">
-        <div className="panel-header" style={{ color: "var(--highlight)" }}>
+        <div
+          className="panel-header"
+          style={{ fontSize: "18px", color: "var(--highlight)" }}
+        >
           反事實實驗室 (Counterfactual Lab) - 決戰球 (Putaway) / 佈局球 (Setup)
         </div>
-        <div className="at-bat-view">
-          <StrikeZone pitches={renderPitches} />
-          <div style={{ flex: 1 }}>
-            <div className="lab-controls">
-              <div className="control-group">
-                <label style={{ color: "var(--highlight)" }}>
-                  戰術選擇 (Strategy)
-                </label>
-                <select
-                  value={simMode}
-                  onChange={(e) => {
-                    setSimMode(e.target.value);
-                    setSimResult(null);
-                  }}
-                >
-                  <option value="last">改變決戰球 (Putaway Pitch - N)</option>
-                  <option value="second_last">
-                    改變佈局球 (Setup Pitch - N-1)
+
+        <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+          {/* 控制表單 */}
+          <div
+            style={{
+              display: "flex",
+              gap: "15px",
+              alignItems: "center",
+              flexWrap: "wrap",
+              background: "#f8f9fa",
+              padding: "15px",
+              borderRadius: "8px",
+            }}
+          >
+            <div style={{ flex: "1 1 200px" }}>
+              <label
+                style={{
+                  fontSize: "13px",
+                  color: "var(--highlight)",
+                  fontWeight: "bold",
+                }}
+              >
+                戰術選擇 (Strategy)
+              </label>
+              <select
+                value={simMode}
+                onChange={(e) => {
+                  setSimMode(e.target.value);
+                  setIsSimulated(false);
+                }}
+                style={{ width: "100%", padding: "8px" }}
+              >
+                <option value="last">改變決戰球 (Putaway Pitch - N)</option>
+                <option value="setup">改變佈局球 (Setup Pitch - N-1)</option>
+              </select>
+            </div>
+
+            <div style={{ flex: "1 1 150px" }}>
+              <label
+                style={{ fontSize: "13px", color: "#555", fontWeight: "bold" }}
+              >
+                改變球種 (Pitch Type)
+              </label>
+              <select
+                value={currentType}
+                onChange={(e) => {
+                  setCurrentType(e.target.value);
+                  setIsSimulated(false);
+                }}
+                style={{ width: "100%", padding: "8px" }}
+              >
+                {pitcherData?.arsenal?.map((pt) => (
+                  <option key={pt.value} value={pt.value}>
+                    {pt.label}
                   </option>
-                </select>
-              </div>
-              <div className="control-group">
-                <label>改變球種 (Pitch Type)</label>
-                <select
-                  value={newPitchType}
-                  onChange={(e) => setNewPitchType(e.target.value)}
-                >
-                  {pitcherData?.arsenal?.map((pt) => (
-                    <option key={pt.value} value={pt.value}>
-                      {pt.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="control-group">
-                <label>進壘位置 (Location)</label>
-                <select
-                  value={newPitchZone}
-                  onChange={(e) => setNewPitchZone(e.target.value)}
-                >
-                  {Object.keys(ZONE_COORDINATES).map((zone) => (
-                    <option key={zone} value={zone}>
-                      {zone.replace("壞_", "壞_ ")} ({ZONE_EN[zone]})
-                    </option>
-                  ))}
-                </select>
-              </div>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ flex: "1 1 150px" }}>
+              <label
+                style={{ fontSize: "13px", color: "#555", fontWeight: "bold" }}
+              >
+                進壘位置 (Location)
+              </label>
+              <select
+                value={currentZone}
+                onChange={(e) => {
+                  setCurrentZone(e.target.value);
+                  setIsSimulated(false);
+                }}
+                style={{ width: "100%", padding: "8px" }}
+              >
+                {Object.keys(ZONE_COORDINATES).map((zone) => (
+                  <option key={zone} value={zone}>
+                    {zone.replace("壞_", "壞_ ")} ({ZONE_EN[zone]})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ flex: "1 1 180px", alignSelf: "flex-end" }}>
               <button
                 className="btn-simulate"
-                onClick={runSimulation}
-                disabled={isSimulating || currentSequence.length === 0}
+                style={{ width: "100%", padding: "10px", fontSize: "15px" }}
+                onClick={handleReSimulate}
+                disabled={isSimulating}
               >
-                {isSimulating
-                  ? "運算中 (Simulating)..."
-                  : "重新模擬 (Re-Simulate)"}
+                {isSimulating ? "AI 推演中..." : "重新模擬 (Re-Simulate)"}
               </button>
             </div>
-            <div className="metrics-grid">
-              {renderMetric("不揮棒 (Take)", "👀", 0, null)}
-              {renderMetric("揮空 (Whiff)", "💨", 1, true)}
-              {renderMetric("界外 (Foul)", "🛑", 2, true)}
-              {renderMetric("弱擊球 (Weak Contact)", "🏏", 3, true)}
-              {renderMetric("強擊球 (Hard Hit)", "🚀", 4, false)}
-            </div>
+          </div>
+
+          {/* 5 種打擊結果機率對照卡片 */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+              gap: "10px",
+            }}
+          >
+            <OutcomeCompareCard
+              label="👀 不揮棒 (Take)"
+              orig={origProbs?.[0]}
+              cf={cfProbs?.[0]}
+            />
+            <OutcomeCompareCard
+              label="💨 揮空 (Whiff)"
+              orig={origProbs?.[1]}
+              cf={cfProbs?.[1]}
+            />
+            <OutcomeCompareCard
+              label="🛑 界外 (Foul)"
+              orig={origProbs?.[2]}
+              cf={cfProbs?.[2]}
+            />
+            <OutcomeCompareCard
+              label="🏏 弱擊球 (Weak)"
+              orig={origProbs?.[3]}
+              cf={cfProbs?.[3]}
+            />
+            <OutcomeCompareCard
+              label="🚀 強擊球 (Hard)"
+              orig={origProbs?.[4]}
+              cf={cfProbs?.[4]}
+            />
           </div>
         </div>
       </div>
     </>
+  );
+}
+
+// 輔助卡片組件：清楚比對「原始真實機率」與「反事實推演機率」
+function OutcomeCompareCard({ label, orig, cf }) {
+  return (
+    <div
+      style={{
+        background: "#fff",
+        border: "1px solid #e0e6ed",
+        borderRadius: "8px",
+        padding: "12px",
+        textAlign: "center",
+        boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+      }}
+    >
+      <div
+        style={{
+          fontSize: "13px",
+          color: "#555",
+          fontWeight: "bold",
+          marginBottom: "8px",
+        }}
+      >
+        {label}
+      </div>
+      {cf !== undefined && orig !== undefined ? (
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "baseline",
+            gap: "8px",
+          }}
+        >
+          <span
+            style={{
+              fontSize: "13px",
+              color: "#95a5a6",
+              textDecoration: "line-through",
+            }}
+          >
+            {orig}%
+          </span>
+          <span
+            style={{
+              fontSize: "18px",
+              fontWeight: "bold",
+              color: cf > orig ? "#27ae60" : "#c0392b",
+            }}
+          >
+            {cf}%
+          </span>
+        </div>
+      ) : (
+        <div style={{ fontSize: "16px", color: "#bdc3c7", fontWeight: "bold" }}>
+          --
+        </div>
+      )}
+    </div>
   );
 }

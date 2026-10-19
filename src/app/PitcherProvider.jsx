@@ -29,18 +29,39 @@ export default function PitcherProvider({ children }) {
 
   useEffect(() => {
     setIsMounted(true);
-    async function fetchPitchers() {
+
+    async function loadPitchers() {
+      setIsLoading(true);
       try {
-        const response = await fetch(`${API_BASE_URL}/api/pitchers`);
-        const data = await response.json();
-        setPitchers(data);
-      } catch (error) {
-        console.error("無法載入投手清單", error);
+        const res = await fetch("/api/pitchers");
+        if (!res.ok) throw new Error("無法取得投手資料");
+        const data = await res.json();
+
+        // 兼容陣列 (Supabase) 與物件 (Flask 備援) 結構
+        const pitcherMap = {};
+        if (Array.isArray(data)) {
+          data.forEach((p) => {
+            pitcherMap[p.pitcher_id] = {
+              name: p.name,
+              p_throws: p.throws,
+              throws: p.throws,
+              arm_angle: p.arm_angle,
+              arsenal: p.arsenal,
+            };
+          });
+        } else {
+          Object.assign(pitcherMap, data);
+        }
+
+        setPitchers(pitcherMap);
+      } catch (err) {
+        console.error("載入投手失敗：", err);
       } finally {
         setIsLoading(false);
       }
     }
-    fetchPitchers();
+
+    loadPitchers();
   }, []);
 
   const pitcherOptions = Object.keys(pitchers)

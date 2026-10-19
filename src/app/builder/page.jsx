@@ -10,7 +10,7 @@ import PitchResultCard from "../../components/PitchResultCard";
 import MatchupSelector from "../../components/MatchupSelector";
 import PitchSetupSelects from "../../components/PitchSetupSelects";
 import useBatters from "../../hooks/useBatters";
-import { supabase } from "../../lib/supabase";
+import { getPitchPhysics } from "../../lib/pitchUtils";
 
 export default function BuilderPage() {
   const { pitcherId, pitcherData } = useContext(PitcherContext);
@@ -29,6 +29,39 @@ export default function BuilderPage() {
   const [pitches, setPitches] = useState([]);
   const [simResults, setSimResults] = useState([]);
   const [isSimulating, setIsSimulating] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState(""); // "" | "success" | "error"
+
+  // 🌟 2. 獨立的手動儲存函式
+  const handleSaveRecord = async () => {
+    if (simResults.length === 0) return;
+    setIsSaving(true);
+    setSaveStatus("");
+
+    try {
+      const response = await fetch("/api/history", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          pitcher_id: pitcherId,
+          batter_id: selectedBatterId,
+          stand: selectedStand,
+          sequence_data: simResults,
+        }),
+      });
+
+      if (!response.ok) throw new Error("儲存失敗");
+
+      setSaveStatus("success");
+      setTimeout(() => setSaveStatus(""), 3000);
+    } catch (err) {
+      console.error("❌ 寫入資料庫失敗：", err);
+      setSaveStatus("error");
+      setTimeout(() => setSaveStatus(""), 3000);
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   // 2. 聰明陣列更新邏輯
   useEffect(() => {
@@ -81,26 +114,30 @@ export default function BuilderPage() {
       let probs = [];
 
       try {
+        // 🌟 1. 組合過去已推演出的球路 (純策略代號，不帶敏感物理值)
         const pastPitchesPayload = finalResults.map((r) => ({
           type: r.type,
           zone: r.zone,
-          result: r.selected_result, // 👈 傳入自動推演選定的結果
+          result: r.selected_result,
         }));
+
+        // 🌟 2. 加入當下要推演的這一顆球
         pastPitchesPayload.push({
           type: currentPitch.type,
           zone: currentPitch.zone,
         });
 
-        const response = await fetch(`${API_BASE_URL}/api/simulate_sequence`, {
+        // 🌟 3. 發送請求：確認 pitches 欄位傳入的是 pastPitchesPayload
+        const response = await fetch("/api/simulate_sequence", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             pitcher_id: pitcherId,
+            batter_id: selectedBatterId,
             stand: selectedStand,
-            adv_stats: batter?.adv_stats || {},
-            b_count: currentB, // 👈 傳入推演當下的壞球數
-            s_count: currentS, // 👈 傳入推演當下的好球數
-            pitches: pastPitchesPayload,
+            b_count: currentB,
+            s_count: currentS,
+            pitches: pastPitchesPayload, // 👈 這裡必須是 pastPitchesPayload，絕不能寫成 currentPitchesPayload！
           }),
         });
 
@@ -180,21 +217,7 @@ export default function BuilderPage() {
     }
 
     setSimResults(finalResults);
-    try {
-      const { data, error } = await supabase.from("pitch_histories").insert([
-        {
-          pitcher_id: pitcherId,
-          batter_id: selectedBatterId,
-          stand: selectedStand,
-          sequence_data: finalResults, // 🌟 直接把這包超複雜的 JSON 陣列丟給 Supabase
-        },
-      ]);
 
-      if (error) throw error;
-      console.log("✅ 成功寫入 Supabase 資料庫！");
-    } catch (dbError) {
-      console.error("❌ 寫入資料庫失敗：", dbError);
-    }
     setIsSimulating(false);
   };
 
@@ -336,7 +359,7 @@ export default function BuilderPage() {
                   <button
                     type="button"
                     onClick={() =>
-                      setSeqLength((prev) => Math.max(7, prev + 1))
+                      setSeqLength((prev) => Math.min(7, prev + 1))
                     }
                     disabled={seqLength >= 7}
                     style={{
@@ -472,6 +495,39 @@ export default function BuilderPage() {
                   <h3 style={{ margin: 0, color: "#2c3e50", fontSize: "16px" }}>
                     📋 推演歷史軌跡 (Expected Sequence)
                   </h3>
+                  {/* 🌟 新增：手動儲存按鈕 */}
+                  <button
+                    onClick={handleSaveRecord}
+                    disabled={isSaving || simResults.length === 0}
+                    style={{
+                      background:
+                        saveStatus === "success"
+                          ? "#27ae60"
+                          : saveStatus === "error"
+                          ? "#c0392b"
+                          : "#3498db",
+                      color: "#fff",
+                      border: "none",
+                      borderRadius: "6px",
+                      padding: "6px 14px",
+                      fontSize: "13px",
+                      fontWeight: "bold",
+                      cursor: isSaving ? "not-allowed" : "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      transition: "0.2s",
+                      boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+                    }}
+                  >
+                    {isSaving
+                      ? "⏳ 儲存中..."
+                      : saveStatus === "success"
+                      ? "✅ 已儲存至雲端！"
+                      : saveStatus === "error"
+                      ? "❌ 儲存失敗"
+                      : "💾 儲存此配球紀錄"}
+                  </button>
                 </div>
 
                 <div
