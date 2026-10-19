@@ -1,6 +1,78 @@
 import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabaseServer";
 
+export const dynamic = "force-dynamic";
+
+// ==============================================================================
+// 🌟 核心提速：Node.js 記憶體特徵快取 (解耦獨立快取池，TTL 10 分鐘)
+// ==============================================================================
+const PITCHER_CACHE = new Map();
+const BATTER_CACHE = new Map();
+const CACHE_TTL = 10 * 60 * 1000; // 10 分鐘
+
+async function getPitcherProfile(pitcherId) {
+  const now = Date.now();
+  if (PITCHER_CACHE.has(pitcherId)) {
+    const cached = PITCHER_CACHE.get(pitcherId);
+    if (now - cached.timestamp < CACHE_TTL) {
+      return cached.data;
+    }
+  }
+
+  let pitcherData = {};
+  if (supabaseServer) {
+    try {
+      const res = await supabaseServer
+        .from("pitchers")
+        .select("arm_angle, throws, arsenal")
+        .eq("pitcher_id", String(pitcherId))
+        .maybeSingle();
+
+      pitcherData = res?.data || {};
+      PITCHER_CACHE.set(pitcherId, { timestamp: now, data: pitcherData });
+      console.log(
+        `⚡ [Cache Miss -> Stored] 投手 ${pitcherId} 已載入 BFF 記憶體快取`
+      );
+    } catch (e) {
+      console.warn("⚠️ [Pitcher Fetch] 查詢失敗：", e.message);
+    }
+  }
+  return pitcherData;
+}
+
+async function getBatterProfile(batterId) {
+  const now = Date.now();
+  if (BATTER_CACHE.has(batterId)) {
+    const cached = BATTER_CACHE.get(batterId);
+    if (now - cached.timestamp < CACHE_TTL) {
+      return cached.data;
+    }
+  }
+
+  let batterAdvStats = {};
+  if (supabaseServer) {
+    try {
+      const res = await supabaseServer
+        .from("batters")
+        .select("adv_stats")
+        .eq("batter_id", String(batterId))
+        .maybeSingle();
+
+      batterAdvStats = res?.data?.adv_stats || {};
+      BATTER_CACHE.set(batterId, { timestamp: now, data: batterAdvStats });
+      console.log(
+        `⚡ [Cache Miss -> Stored] 打者 ${batterId} 已載入 BFF 記憶體快取`
+      );
+    } catch (e) {
+      console.warn("⚠️ [Batter Fetch] 查詢失敗：", e.message);
+    }
+  }
+  return batterAdvStats;
+}
+
+// ==============================================================================
+// 路由主函式
+// ==============================================================================
 export async function POST(request) {
   try {
     const body = await request.json();
@@ -25,35 +97,13 @@ export async function POST(request) {
       ? forwardedHeader.split(",")[0].trim()
       : "127.0.0.1";
 
-    // 3. 取得物理特性 (改用 maybeSingle 避免 0 筆資料時拋出例外崩潰)
-    let pitcherData = {};
-    let batterAdvStats = {};
+    // 🌟 3. 正確呼叫快取函式 (第一次查 DB，第 2~7 球推演 0ms 瞬間從記憶體讀出！)
+    const [pitcherData, batterAdvStats] = await Promise.all([
+      getPitcherProfile(pitcher_id),
+      getBatterProfile(batter_id),
+    ]);
 
-    if (supabaseServer) {
-      try {
-        const [pitcherRes, batterRes] = await Promise.all([
-          supabaseServer
-            .from("pitchers")
-            .select("arm_angle, throws, arsenal")
-            .eq("pitcher_id", String(pitcher_id))
-            .maybeSingle(),
-          supabaseServer
-            .from("batters")
-            .select("adv_stats")
-            .eq("batter_id", String(batter_id))
-            .maybeSingle(),
-        ]);
-        pitcherData = pitcherRes?.data || {};
-        batterAdvStats = batterRes?.data?.adv_stats || {};
-      } catch (dbErr) {
-        console.warn(
-          "⚠️ [BFF simulate_sequence] Supabase 查詢異常，改用預設物理常數：",
-          dbErr.message
-        );
-      }
-    }
-
-    // 4. 特徵合成
+    // 4. 特徵合成 (前端完全不經手物理值，零知識安全防禦)
     const enrichedPitches = pitches.map((p) => {
       const pt = pitcherData.arsenal?.find((a) => a.value === p.type);
       const zonePhysics = pt?.zone_stats?.[p.zone] ||
@@ -71,11 +121,7 @@ export async function POST(request) {
 
     const backendUrl = process.env.FLASK_BACKEND_URL || "http://127.0.0.1:5000";
     const internalSecret =
-      process.env.INTERNAL_API_SECRET || "my-super-secret-baseball-key-2026";
-
-    console.log(
-      `📡 [BFF] 正在發送推演請求至後端：${backendUrl}/api/simulate_sequence`
-    );
+      process.env.INTERNAL_API_SECRET || "dev-secret-key-change-in-prod";
 
     // 5. 轉發至 Flask 推論服務
     const response = await fetch(`${backendUrl}/api/simulate_sequence`, {
