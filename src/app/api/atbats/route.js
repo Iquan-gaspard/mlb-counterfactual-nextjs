@@ -2,6 +2,33 @@ import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabaseServer";
 export const dynamic = "force-dynamic";
 
+// 🌟 定義前端 UI 渲染專用的白名單過濾器 (徹底剔除 raw_* 物理欄位)
+function sanitizeAtBats(atbatsList) {
+  if (!Array.isArray(atbatsList)) return [];
+
+  return atbatsList.map((ab) => ({
+    ab_id: ab.ab_id,
+    pitcher_id: ab.pitcher_id,
+    label: ab.label,
+    stand: ab.stand,
+    // 🌟 精確過濾 sequence 陣列，只保留前端畫面渲染需要的屬性
+    sequence: (ab.sequence || []).map((p) => ({
+      num: p.num,
+      type: p.type,
+      name: p.name,
+      speed: p.speed,
+      result: p.result,
+      isStrike: p.isStrike,
+      count: p.count,
+      x: p.x,
+      y: p.y,
+      zone_name: p.zone_name,
+      launch_speed: p.launch_speed || "",
+      // ❌ 徹底剔除：raw_pfx_x, raw_pfx_z, raw_px, raw_pz, raw_speed
+    })),
+  }));
+}
+
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -34,7 +61,7 @@ export async function GET(request) {
 
         // 若資料庫有該投手的打席資料，直接回傳
         if (data && data.length > 0) {
-          return NextResponse.json(data);
+          return NextResponse.json(sanitizeAtBats(data));
         }
       } catch (dbErr) {
         console.warn(
