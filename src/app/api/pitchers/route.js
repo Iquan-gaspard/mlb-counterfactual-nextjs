@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabaseServer";
+import { getLocalPitchers } from "@/lib/localDataLoader";
 
 export async function GET() {
   const flaskUrl = process.env.FLASK_BACKEND_URL || "http://127.0.0.1:5000";

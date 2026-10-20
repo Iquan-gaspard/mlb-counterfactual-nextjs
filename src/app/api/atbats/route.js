@@ -17,8 +17,7 @@ export async function GET(request) {
 
     const forceLocal = process.env.FORCE_LOCAL_DATA === "true";
     const flaskUrl = process.env.FLASK_BACKEND_URL || "http://127.0.0.1:5000";
-    const internalSecret =
-      process.env.INTERNAL_API_SECRET || "my-super-secret-baseball-key-2026";
+    const internalSecret = process.env.INTERNAL_API_SECRET;
 
     // ==========================================
     // 第一優先：Supabase 雲端資料庫 (若未強制本地)

@@ -75,8 +75,16 @@ export async function POST(request) {
     ];
 
     const backendUrl = process.env.FLASK_BACKEND_URL || "http://127.0.0.1:5000";
-    const internalSecret =
-      process.env.INTERNAL_API_SECRET || "my-super-secret-baseball-key-2026";
+    const internalSecret = process.env.INTERNAL_API_SECRET;
+    if (!internalSecret) {
+      console.error(
+        "🚨 [Security Alert] 伺服器缺少 INTERNAL_API_SECRET 環境變數！"
+      );
+      return NextResponse.json(
+        { error: "Server Configuration Error" },
+        { status: 500 }
+      );
+    }
 
     const forwardedHeader = request.headers.get("x-forwarded-for");
     const clientIp = forwardedHeader

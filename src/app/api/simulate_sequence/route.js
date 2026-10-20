@@ -120,8 +120,16 @@ export async function POST(request) {
     });
 
     const backendUrl = process.env.FLASK_BACKEND_URL || "http://127.0.0.1:5000";
-    const internalSecret =
-      process.env.INTERNAL_API_SECRET || "dev-secret-key-change-in-prod";
+    const internalSecret = process.env.INTERNAL_API_SECRET;
+    if (!internalSecret) {
+      console.error(
+        "🚨 [Security Alert] 伺服器缺少 INTERNAL_API_SECRET 環境變數！"
+      );
+      return NextResponse.json(
+        { error: "Server Configuration Error" },
+        { status: 500 }
+      );
+    }
 
     // 5. 轉發至 Flask 推論服務
     const response = await fetch(`${backendUrl}/api/simulate_sequence`, {

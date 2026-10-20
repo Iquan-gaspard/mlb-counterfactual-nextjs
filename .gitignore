@@ -48,3 +48,7 @@ etl_atbats_to_supabase.py
 aa.txt
 mlb_pitch_data_2026_strictly_filtered_test.csv.gz
 
+# 本地極速開發專用資料檔
+src/data/*.json
+src/data/dump_local_json.py
+
