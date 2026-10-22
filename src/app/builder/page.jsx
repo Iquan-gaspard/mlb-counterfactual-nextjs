@@ -1,19 +1,16 @@
 "use client";
 import React, { useState, useEffect, useContext } from "react";
-import StrikeZone, {
-  ZONE_COORDINATES,
-  ZONE_EN,
-} from "../../components/StrikeZone";
-import Select from "react-select";
-import { PitcherContext, API_BASE_URL, selectStyles } from "../PitcherProvider";
+import StrikeZone, { ZONE_COORDINATES } from "../../components/StrikeZone";
+import { PitcherContext, selectStyles } from "../PitcherProvider";
 import PitchResultCard from "../../components/PitchResultCard";
 import MatchupSelector from "../../components/MatchupSelector";
 import PitchSetupSelects from "../../components/PitchSetupSelects";
 import useBatters from "../../hooks/useBatters";
-import { getPitchPhysics } from "../../lib/pitchUtils";
+import { useLanguage } from "@/context/LanguageContext"; // 🌟 1. 引入語系 Hook
 
 export default function BuilderPage() {
   const { pitcherId, pitcherData } = useContext(PitcherContext);
+  const { t } = useLanguage(); // 🌟 2. 取得翻譯函式 t
   const {
     batters,
     selectedBatterId,
@@ -96,13 +93,10 @@ export default function BuilderPage() {
     setIsModified(true);
   };
 
-  // 3. 核心：前端逐球推演引擎
+  // 核心：前端逐球推演引擎
   const runSequence = async () => {
     setIsSimulating(true);
     setIsModified(false);
-    const batter = batters.find(
-      (b) => b.batter_id.toString() === selectedBatterId
-    );
 
     let currentB = 0;
     let currentS = 0;
@@ -114,20 +108,17 @@ export default function BuilderPage() {
       let probs = [];
 
       try {
-        // 🌟 1. 組合過去已推演出的球路 (純策略代號，不帶敏感物理值)
         const pastPitchesPayload = finalResults.map((r) => ({
           type: r.type,
           zone: r.zone,
           result: r.selected_result,
         }));
 
-        // 🌟 2. 加入當下要推演的這一顆球
         pastPitchesPayload.push({
           type: currentPitch.type,
           zone: currentPitch.zone,
         });
 
-        // 🌟 3. 發送請求：確認 pitches 欄位傳入的是 pastPitchesPayload
         const response = await fetch("/api/simulate_sequence", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -137,7 +128,7 @@ export default function BuilderPage() {
             stand: selectedStand,
             b_count: currentB,
             s_count: currentS,
-            pitches: pastPitchesPayload, // 👈 這裡必須是 pastPitchesPayload，絕不能寫成 currentPitchesPayload！
+            pitches: pastPitchesPayload,
           }),
         });
 
@@ -217,17 +208,15 @@ export default function BuilderPage() {
     }
 
     setSimResults(finalResults);
-
     setIsSimulating(false);
   };
 
-  // 4. 準備九宮格渲染資料
+  // 準備九宮格渲染資料
   const renderPitches =
     simResults.length > 0
       ? simResults.map((r, idx) => {
           const coords = ZONE_COORDINATES[r.zone] || { x: 50, y: 50 };
           const isLast = idx === simResults.length - 1;
-          // 🌟 修正好壞球判斷：跟 Interactive 頁面同步
           const isStrike = isLast
             ? !r.zone.includes("壞")
             : !(r.selected_result === "Take" && r.zone.includes("壞"));
@@ -243,11 +232,6 @@ export default function BuilderPage() {
         })
       : [];
 
-  const batterOptions = batters.map((b) => ({
-    value: b.batter_id.toString(),
-    label: b.label,
-  }));
-
   return (
     <>
       <MatchupSelector
@@ -258,18 +242,18 @@ export default function BuilderPage() {
         selectedStand={selectedStand}
         setSelectedStand={setSelectedStand}
         selectStyles={selectStyles}
-        onMatchupChange={() => setSimResults([])} // 🌟 換打者就清空右側結果
+        onMatchupChange={() => setSimResults([])}
       />
 
       <div className="panel" style={{ position: "relative" }}>
+        {/* 🌟 替換標題 */}
         <div
           className="panel-header"
           style={{ color: "#e67e22", fontSize: "18px", marginBottom: "20px" }}
         >
-          自動推演實驗室 (Auto-Sequence Builder) - 多球賽局沙盤推演
+          {t("builder_title")}
         </div>
 
-        {/* 🌟 全新佈局：左右分區 */}
         <div
           style={{
             display: "flex",
@@ -278,9 +262,7 @@ export default function BuilderPage() {
             flexWrap: "wrap",
           }}
         >
-          {/* =========================================
-              🟠 左側區塊：九宮格與設定表單 (置頂黏著)
-              ========================================= */}
+          {/* 左側區塊：九宮格與設定表單 */}
           <div
             style={{
               flex: "1 1 300px",
@@ -324,7 +306,7 @@ export default function BuilderPage() {
                     fontSize: "14px",
                   }}
                 >
-                  預定配球數 (Pitches)
+                  {t("planned_pitches")}
                 </label>
                 <div
                   style={{ display: "flex", alignItems: "center", gap: "8px" }}
@@ -422,6 +404,7 @@ export default function BuilderPage() {
                 ))}
               </div>
 
+              {/* 🌟 替換按鈕文字 */}
               <button
                 className="btn-simulate"
                 onClick={runSequence}
@@ -434,15 +417,13 @@ export default function BuilderPage() {
                 }}
               >
                 {isSimulating
-                  ? "逐球推演中..."
-                  : "啟動自動推演 (Run Auto-Sequence)"}
+                  ? t("simulating_sequence")
+                  : t("btn_run_sequence")}
               </button>
             </div>
           </div>
 
-          {/* =========================================
-              🔵 右側區塊：推演結果清單 (卷軸呈現)
-              ========================================= */}
+          {/* 右側區塊：推演結果清單 */}
           <div style={{ flex: "2 1 450px", minWidth: 0 }}>
             {simResults.length === 0 ? (
               <div
@@ -466,12 +447,12 @@ export default function BuilderPage() {
                 <span style={{ fontSize: "24px", marginBottom: "10px" }}>
                   ⚾
                 </span>
-                {/* 🌟 拔除「左側」，改為「請先完成配球設定」 */}
-                請先完成配球設定，並點擊「啟動自動推演」
+                {/* 🌟 替換空狀態導引說明 */}
+                {t("builder_empty_hint_1")}
                 <br />
-                系統將層層遞迴預測最可能的對決路徑。
+                {t("builder_empty_hint_2")}
                 <br />
-                (包含兩好球與保送機制)
+                {t("builder_empty_hint_3")}
               </div>
             ) : (
               <div
@@ -492,42 +473,10 @@ export default function BuilderPage() {
                     borderBottom: "2px solid #e0e6ed",
                   }}
                 >
+                  {/* 🌟 替換歷史軌跡標題 */}
                   <h3 style={{ margin: 0, color: "#2c3e50", fontSize: "16px" }}>
-                    📋 推演歷史軌跡 (Expected Sequence)
+                    {t("expected_sequence_title")}
                   </h3>
-                  {/* 🌟 新增：手動儲存按鈕 */}
-                  {/* <button
-                    onClick={handleSaveRecord}
-                    disabled={isSaving || simResults.length === 0}
-                    style={{
-                      background:
-                        saveStatus === "success"
-                          ? "#27ae60"
-                          : saveStatus === "error"
-                          ? "#c0392b"
-                          : "#3498db",
-                      color: "#fff",
-                      border: "none",
-                      borderRadius: "6px",
-                      padding: "6px 14px",
-                      fontSize: "13px",
-                      fontWeight: "bold",
-                      cursor: isSaving ? "not-allowed" : "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "6px",
-                      transition: "0.2s",
-                      boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
-                    }}
-                  >
-                    {isSaving
-                      ? "⏳ 儲存中..."
-                      : saveStatus === "success"
-                      ? "✅ 已儲存至雲端！"
-                      : saveStatus === "error"
-                      ? "❌ 儲存失敗"
-                      : "💾 儲存此配球紀錄"}
-                  </button> */}
                 </div>
 
                 <div
@@ -537,36 +486,27 @@ export default function BuilderPage() {
                     gap: "10px",
                   }}
                 >
-                  {simResults.map((r, idx) => {
-                    const borderColor = r.is_walk
-                      ? "#27ae60"
-                      : r.is_final
-                      ? "#c0392b"
-                      : "#e67e22";
-                    const bgColor = r.is_final ? "#fdf2e9" : "#fff";
-
-                    return (
-                      <PitchResultCard
-                        key={idx}
-                        mode="builder"
-                        pitchNum={r.pitch_num}
-                        type={r.type}
-                        zone={r.zone}
-                        probs={{
-                          take: r.probs.take,
-                          whiff: r.probs.whiff,
-                          foul: r.probs.foul,
-                          weak: r.probs.weak_contact,
-                          hard: r.probs.hard_contact,
-                        }}
-                        outcome={r.selected_result}
-                        bCount={r.b_count}
-                        sCount={r.s_count}
-                        isWalk={r.is_walk}
-                        isFinal={r.is_final}
-                      />
-                    );
-                  })}
+                  {simResults.map((r, idx) => (
+                    <PitchResultCard
+                      key={idx}
+                      mode="builder"
+                      pitchNum={r.pitch_num}
+                      type={r.type}
+                      zone={r.zone}
+                      probs={{
+                        take: r.probs.take,
+                        whiff: r.probs.whiff,
+                        foul: r.probs.foul,
+                        weak: r.probs.weak_contact,
+                        hard: r.probs.hard_contact,
+                      }}
+                      outcome={r.selected_result}
+                      bCount={r.b_count}
+                      sCount={r.s_count}
+                      isWalk={r.is_walk}
+                      isFinal={r.is_final}
+                    />
+                  ))}
                 </div>
               </div>
             )}

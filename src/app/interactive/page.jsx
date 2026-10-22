@@ -1,19 +1,17 @@
 "use client";
 import React, { useState, useEffect, useContext } from "react";
-import StrikeZone, {
-  ZONE_COORDINATES,
-  ZONE_EN,
-} from "../../components/StrikeZone";
-import Select from "react-select";
-import { PitcherContext, API_BASE_URL, selectStyles } from "../PitcherProvider";
+import StrikeZone, { ZONE_COORDINATES } from "../../components/StrikeZone";
+import { PitcherContext } from "../PitcherProvider";
 import PitchResultCard from "../../components/PitchResultCard";
 import MatchupSelector from "../../components/MatchupSelector";
 import PitchSetupSelects from "../../components/PitchSetupSelects";
 import useBatters from "../../hooks/useBatters";
 import { getPitchPhysics } from "../../lib/pitchUtils";
+import { useLanguage } from "@/context/LanguageContext";
 
 export default function InteractivePage() {
   const { pitcherId, pitcherData } = useContext(PitcherContext);
+  const { t, lang } = useLanguage(); // 🌟 同時引入 t 與 lang
 
   const {
     batters,
@@ -80,20 +78,10 @@ export default function InteractivePage() {
     });
   }
 
-  const batterOptions = batters.map((b) => ({
-    value: b.batter_id.toString(),
-    label: b.label,
-  }));
-
-  // 🌟 修正：完美對接 Flask /api/simulate_sequence 的推演邏輯
   const handlePitch = async () => {
     setIsSimulating(true);
-    const batter = batters.find(
-      (b) => b.batter_id.toString() === selectedBatterId
-    );
 
     try {
-      // 🌟 1. 歷史球逐一填入該位置的物理數值
       const currentPitchesPayload = [
         ...sequence.map((p) => {
           const phys = getPitchPhysics(pitcherData, p.type, p.zone);
@@ -106,7 +94,6 @@ export default function InteractivePage() {
             pfx_z: phys.pfx_z,
           };
         }),
-        // 🌟 2. 當前要投的這顆球也填入物理數值
         (() => {
           const phys = getPitchPhysics(pitcherData, currentType, currentZone);
           return {
@@ -119,7 +106,6 @@ export default function InteractivePage() {
         })(),
       ];
 
-      // 🌟 3. 送出請求，同時帶上投手的 arm_angle
       const response = await fetch("/api/simulate_sequence", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -138,11 +124,6 @@ export default function InteractivePage() {
       });
 
       if (!response.ok) {
-        const errorDetail = await response.text();
-        console.error(
-          `🚨 [BFF Proxy 拒絕存取] HTTP 狀態碼: ${response.status}`,
-          errorDetail
-        );
         throw new Error(`API 回應錯誤: HTTP ${response.status}`);
       }
 
@@ -196,14 +177,14 @@ export default function InteractivePage() {
         setSelectedBatterId={setSelectedBatterId}
         selectedStand={selectedStand}
         setSelectedStand={setSelectedStand}
-        selectStyles={selectStyles}
         onMatchupChange={() => {
-          setSequence([]); // 🌟 沉浸模式：換打者就清空所有推演歷史
+          setSequence([]);
           setStep("build");
         }}
       />
 
       <div className="panel" style={{ position: "relative" }}>
+        {/* 頂部標題與球數 */}
         <div
           className="panel-header"
           style={{
@@ -213,9 +194,7 @@ export default function InteractivePage() {
             marginBottom: "20px",
           }}
         >
-          <span style={{ fontSize: "18px" }}>
-            🎮 沉浸式配球推演 (Interactive Mode)
-          </span>
+          <span style={{ fontSize: "18px" }}>{t("interactive_title")}</span>
           <span
             style={{
               fontSize: "22px",
@@ -236,7 +215,7 @@ export default function InteractivePage() {
             flexWrap: "wrap",
           }}
         >
-          {/* 左側區塊：九宮格與控制區 (維持置頂黏著) */}
+          {/* 左側區塊：九宮格與控制區 */}
           <div
             style={{
               flex: "1 1 300px",
@@ -273,10 +252,10 @@ export default function InteractivePage() {
                     }}
                   >
                     {isStrikeout
-                      ? "🎯 三振出局 (Strikeout)！"
+                      ? t("status_strikeout")
                       : isWalk
-                      ? "🚶 保送上壘 (Walk)！"
-                      : "⚾ 擊球進場 (Ball In Play)！"}
+                      ? t("status_walk")
+                      : t("status_ball_in_play")}
                   </h2>
                   <button
                     onClick={() => {
@@ -290,60 +269,101 @@ export default function InteractivePage() {
                       fontSize: "15px",
                     }}
                   >
-                    🔄 開始新打席
+                    {t("btn_new_atbat")}
                   </button>
                 </div>
               ) : step === "build" ? (
+                /* 🌟 核心修復：強制定義 column 排版並鎖定 order 順序 */
                 <div
-                  className="lab-controls"
                   style={{
                     marginTop: 0,
-                    padding: "15px",
+                    padding: "16px",
                     background: "#f8f9fa",
                     borderRadius: "8px",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "12px",
+                    width: "100%",
+                    boxSizing: "border-box",
                   }}
                 >
-                  <div className="control-group">
-                    <label
+                  {/* 🌟 1. 頂部標題：order 設為 1，置於最上方 */}
+                  <div
+                    style={{
+                      order: 1,
+                      width: "100%",
+                      borderBottom: "1px solid #e2e8f0",
+                      paddingBottom: "8px",
+                      marginBottom: "2px",
+                    }}
+                  >
+                    <span
                       style={{
-                        color: "var(--highlight)",
-                        fontSize: "14px",
-                        marginBottom: "8px",
+                        color: "#0284c7",
+                        fontSize: "15px",
+                        fontWeight: "bold",
+                        display: "block",
                       }}
                     >
-                      第 {sequence.length + 1} 球設定 (Pitch Setup)
-                    </label>
+                      {lang === "en"
+                        ? `Pitch #${sequence.length + 1} Setup`
+                        : `第 ${sequence.length + 1} 球設定`}
+                    </span>
                   </div>
 
-                  <PitchSetupSelects
-                    arsenal={pitcherData?.arsenal}
-                    pitchType={currentType}
-                    pitchZone={currentZone}
-                    onTypeChange={setCurrentType}
-                    onZoneChange={setCurrentZone}
-                  />
+                  {/* 🌟 2. 下拉選單元件：order 設為 2 */}
+                  <div style={{ order: 2, width: "100%" }}>
+                    <PitchSetupSelects
+                      mode="interactive"
+                      arsenal={pitcherData?.arsenal}
+                      pitchType={currentType}
+                      pitchZone={currentZone}
+                      onTypeChange={setCurrentType}
+                      onZoneChange={setCurrentZone}
+                    />
+                  </div>
 
-                  <button
-                    className="btn-simulate"
-                    style={{ width: "100%", padding: "10px", fontSize: "15px" }}
-                    onClick={handlePitch}
-                    disabled={isSimulating}
-                  >
-                    {isSimulating ? "AI 運算中..." : "⚾ 投出此球 (Pitch!)"}
-                  </button>
+                  {/* 🌟 3. 投球按鈕：order 設為 3，置於最底部 */}
+                  <div style={{ order: 3, width: "100%" }}>
+                    <button
+                      className="btn-simulate"
+                      style={{
+                        width: "100%",
+                        padding: "12px",
+                        fontSize: "15px",
+                        fontWeight: "bold",
+                        backgroundColor: "#0284c7",
+                        color: "#fff",
+                        border: "none",
+                        borderRadius: "6px",
+                        cursor: isSimulating ? "not-allowed" : "pointer",
+                      }}
+                      onClick={handlePitch}
+                      disabled={isSimulating}
+                    >
+                      {isSimulating
+                        ? t("simulating_pitch")
+                        : `⚾ ${t("btn_pitch")}`}
+                    </button>
+                  </div>
                 </div>
               ) : (
+                /* 打者反應選擇面板 */
                 <div
-                  className="lab-controls"
                   style={{
                     marginTop: 0,
+                    padding: "16px",
                     background: "#fff",
                     border: "2px solid var(--highlight)",
-                    padding: "15px",
                     borderRadius: "8px",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "12px",
+                    width: "100%",
+                    boxSizing: "border-box",
                   }}
                 >
-                  <div style={{ textAlign: "center", marginBottom: "10px" }}>
+                  <div style={{ textAlign: "center", marginBottom: "8px" }}>
                     <label
                       style={{
                         color: "var(--highlight)",
@@ -351,7 +371,7 @@ export default function InteractivePage() {
                         fontWeight: "bold",
                       }}
                     >
-                      ✨ 指定打者反應：
+                      {t("select_reaction_label")}
                     </label>
                   </div>
                   <div
@@ -367,7 +387,8 @@ export default function InteractivePage() {
                       style={outcomeBtnStyle("#7f8c8d")}
                     >
                       <span>
-                        👀 Take {currentZone.includes("壞") ? "(B)" : "(S)"}
+                        {t("interactive_take")}{" "}
+                        {currentZone.includes("壞") ? "(B)" : "(S)"}
                       </span>
                       <span>
                         {currentProbs ? currentProbs[0].toFixed(1) : "--"}%
@@ -377,7 +398,7 @@ export default function InteractivePage() {
                       onClick={() => handleSelectOutcome("Whiff")}
                       style={outcomeBtnStyle("#27ae60")}
                     >
-                      <span>💨 Whiff</span>
+                      <span>{t("interactive_whiff")}</span>
                       <span>
                         {currentProbs ? currentProbs[1].toFixed(1) : "--"}%
                       </span>
@@ -386,7 +407,7 @@ export default function InteractivePage() {
                       onClick={() => handleSelectOutcome("Foul")}
                       style={outcomeBtnStyle("#f39c12")}
                     >
-                      <span>🛑 Foul</span>
+                      <span>{t("interactive_foul")}</span>
                       <span>
                         {currentProbs ? currentProbs[2].toFixed(1) : "--"}%
                       </span>
@@ -401,7 +422,7 @@ export default function InteractivePage() {
                           fontSize: "12px",
                         }}
                       >
-                        <span>🏏 Weak</span>
+                        <span>{t("interactive_weak")}</span>
                         <span>
                           {currentProbs ? currentProbs[3].toFixed(1) : "--"}%
                         </span>
@@ -415,7 +436,7 @@ export default function InteractivePage() {
                           fontSize: "12px",
                         }}
                       >
-                        <span>🚀 Hard!</span>
+                        <span>{t("interactive_hard")}</span>
                         <span>
                           {currentProbs ? currentProbs[4].toFixed(1) : "--"}%
                         </span>
@@ -427,7 +448,7 @@ export default function InteractivePage() {
             </div>
           </div>
 
-          {/* 右側區塊：極致瘦身版的配球歷史清單 */}
+          {/* 右側區塊：配球歷史清單 */}
           <div style={{ flex: "2 1 450px", minWidth: 0 }}>
             {sequence.length === 0 ? (
               <div
@@ -444,8 +465,7 @@ export default function InteractivePage() {
                   background: "#fafbfc",
                 }}
               >
-                {/* 🌟 拔除「👈」與「左側」，換成準心的 Emoji */}
-                🎯 請先設定球路，開始進行沙盤推演
+                {t("interactive_empty_hint")}
               </div>
             ) : (
               <div className="pitch-list" style={{ width: "100%" }}>
@@ -460,7 +480,7 @@ export default function InteractivePage() {
                   }}
                 >
                   <h3 style={{ margin: 0, color: "#2c3e50", fontSize: "16px" }}>
-                    📋 歷史推演軌跡 (Pitch History)
+                    {t("interactive_history_title")}
                   </h3>
                   <button
                     onClick={undoLastPitch}
@@ -476,11 +496,10 @@ export default function InteractivePage() {
                       boxShadow: "0 1px 3px rgba(231,76,60,0.1)",
                     }}
                   >
-                    ↩️ 復原 (Undo)
+                    {t("btn_undo")}
                   </button>
                 </div>
 
-                {/* 🌟 縮小卡片之間的 gap */}
                 <div
                   style={{
                     display: "flex",
@@ -519,10 +538,9 @@ export default function InteractivePage() {
   );
 }
 
-// 🌟 按鈕樣式一併微調瘦身，並強制 100% 滿版寬度
 const outcomeBtnStyle = (bgColor) => ({
-  width: "100%", // 🌟 強制填滿寬度
-  boxSizing: "border-box", // 🌟 確保 padding 不會撐破外框
+  width: "100%",
+  boxSizing: "border-box",
   padding: "10px 12px",
   fontSize: "14px",
   fontWeight: "bold",

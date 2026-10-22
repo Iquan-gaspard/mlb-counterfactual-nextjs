@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabaseServer";
+import { getLocalAtbats } from "@/lib/localDataLoader"; // 🌟 引入本機載入器
+
 export const dynamic = "force-dynamic";
 
 // 🌟 定義前端 UI 渲染專用的白名單過濾器 (徹底剔除 raw_* 物理欄位)
@@ -11,7 +13,6 @@ function sanitizeAtBats(atbatsList) {
     pitcher_id: ab.pitcher_id,
     label: ab.label,
     stand: ab.stand,
-    // 🌟 精確過濾 sequence 陣列，只保留前端畫面渲染需要的屬性
     sequence: (ab.sequence || []).map((p) => ({
       num: p.num,
       type: p.type,
@@ -24,7 +25,6 @@ function sanitizeAtBats(atbatsList) {
       y: p.y,
       zone_name: p.zone_name,
       launch_speed: p.launch_speed || "",
-      // ❌ 徹底剔除：raw_pfx_x, raw_pfx_z, raw_px, raw_pz, raw_speed
     })),
   }));
 }
@@ -34,7 +34,7 @@ export async function GET(request) {
     const { searchParams } = new URL(request.url);
     const pitcherId = searchParams.get("pitcher_id");
 
-    // 🌟 1. 零信任輸入防禦：驗證 pitcher_id 格式 (防 SQL / 命令注入)
+    // 🌟 1. 零信任輸入防禦：驗證 pitcher_id 格式
     if (!pitcherId || !/^\d+$/.test(pitcherId)) {
       return NextResponse.json(
         { error: "Zero Trust: Invalid pitcher_id format" },
@@ -42,14 +42,30 @@ export async function GET(request) {
       );
     }
 
-    const forceLocal = process.env.FORCE_LOCAL_DATA === "true";
+    const isLocalMode =
+      process.env.DATA_SOURCE === "local" ||
+      process.env.FORCE_LOCAL_DATA === "true";
+
+    // ==========================================
+    // 🌟 第 0 優先：完全離線本機極速直讀 (< 2ms)
+    // ==========================================
+    if (isLocalMode) {
+      const localData = getLocalAtbats(pitcherId);
+      if (localData !== null) {
+        return NextResponse.json(sanitizeAtBats(localData));
+      }
+      console.warn(
+        `⚠️ [Local Data] 找不到投手 ${pitcherId} 的本機打席，嘗試向雲端查詢...`
+      );
+    }
+
     const flaskUrl = process.env.FLASK_BACKEND_URL || "http://127.0.0.1:5000";
     const internalSecret = process.env.INTERNAL_API_SECRET;
 
     // ==========================================
-    // 第一優先：Supabase 雲端資料庫 (若未強制本地)
+    // 第一優先：Supabase 雲端資料庫 (線上生產環境)
     // ==========================================
-    if (!forceLocal && supabaseServer) {
+    if (supabaseServer) {
       try {
         const { data, error } = await supabaseServer
           .from("atbats")
@@ -59,26 +75,22 @@ export async function GET(request) {
 
         if (error) throw error;
 
-        // 若資料庫有該投手的打席資料，直接回傳
         if (data && data.length > 0) {
           return NextResponse.json(sanitizeAtBats(data));
         }
       } catch (dbErr) {
         console.warn(
-          "⚠️ [BFF 容錯警報] Supabase 查詢打席失敗或連線逾時，立即啟動降級機制退回 Flask 後端...",
+          "⚠️ [BFF 容錯警報] Supabase 查詢打席失敗，退回 Flask 備援...",
           dbErr.message
         );
       }
     }
 
     // ==========================================
-    // 第二降級：自動退回 Python Flask 本地備援
+    // 第二降級：退回 Python Flask 備援
     // ==========================================
-    console.log(
-      `🔄 [BFF 備援啟動] 正在向 Flask 抓取投手 ${pitcherId} 的實戰打席備用清單...`
-    );
+    console.log(`🔄 [BFF 備援] 向 Flask 抓取投手 ${pitcherId} 的打席...`);
 
-    // 🌟 零信任要求：向內部 Flask 請求時，必須安全注入內部金鑰
     const res = await fetch(`${flaskUrl}/api/atbats/${pitcherId}`, {
       headers: {
         "X-Internal-API-Key": internalSecret,
@@ -87,18 +99,13 @@ export async function GET(request) {
     });
 
     if (!res.ok) {
-      throw new Error(
-        `Flask 後端備援亦無法提供打席資料 (Status: ${res.status})`
-      );
+      throw new Error(`Flask 後端回應異常 (Status: ${res.status})`);
     }
 
     const fallbackData = await res.json();
-    return NextResponse.json(fallbackData);
+    return NextResponse.json(sanitizeAtBats(fallbackData));
   } catch (err) {
-    console.error(
-      "❌ [BFF 終極錯誤] 雲端資料庫與後端備援均無法取得實戰打席：",
-      err.message
-    );
+    console.error("❌ [BFF 錯誤] 無法取得實戰打席：", err.message);
     return NextResponse.json(
       { error: "無法取得打席資料", detail: err.message },
       { status: 502 }

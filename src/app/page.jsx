@@ -6,9 +6,11 @@ import StrikeZone, {
 } from "../components/StrikeZone";
 import Select from "react-select";
 import { PitcherContext, selectStyles } from "./PitcherProvider";
+import { useLanguage } from "@/context/LanguageContext"; // 🌟 1. 引入語系 Hook
 
 export default function ActualAtBatPage() {
   const { pitcherId, pitcherData } = useContext(PitcherContext);
+  const { t, lang } = useLanguage(); // 🌟 2. 取得翻譯函式 t 與目前語言 lang
 
   const [atBats, setAtBats] = useState([]);
   const [selectedAtBatId, setSelectedAtBatId] = useState("");
@@ -72,14 +74,13 @@ export default function ActualAtBatPage() {
       !currentAtBat.sequence ||
       currentAtBat.sequence.length < 2
     ) {
-      alert("此打席球數不足以進行反事實推演");
+      alert(t("alert_insufficient_pitches")); // 🌟 替換彈窗警報
       return;
     }
 
     setIsSimulating(true);
 
     try {
-      // 🌟 前端只需要傳遞決策參數，不再傳送任何原始座標或 sequence 陣列！
       const response = await fetch("/api/simulate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -102,13 +103,13 @@ export default function ActualAtBatPage() {
       setIsSimulated(true);
     } catch (error) {
       console.error("反事實模擬出錯：", error);
-      alert("模擬推演失敗，請確認後端服務連線正常");
+      alert(t("alert_simulation_failed")); // 🌟 替換彈窗警報
     } finally {
       setIsSimulating(false);
     }
   };
 
-  // 3. 準備九宮格渲染資料 (若是反事實模擬球，給予黃色光暈標記)
+  // 3. 準備九宮格渲染資料
   const renderPitches = currentAtBat?.sequence
     ? currentAtBat.sequence.map((p, idx) => {
         const isTarget =
@@ -122,7 +123,7 @@ export default function ActualAtBatPage() {
             y: coords.y,
             num: p.num,
             isStrike: !currentZone.includes("壞"),
-            isModified: true, // 帶有黃色高亮光暈
+            isModified: true,
             opacity: 1,
           };
         }
@@ -138,10 +139,18 @@ export default function ActualAtBatPage() {
       })
     : [];
 
-  const atBatOptions = atBats.map((ab) => ({
-    value: ab.ab_id,
-    label: ab.label,
-  }));
+  const atBatOptions = atBats.map((ab) => {
+    let cleanLabel = ab.label || "";
+    if (lang === "en") {
+      cleanLabel = cleanLabel
+        .replace(/（左打）|\(左打\)/g, " (LHB)")
+        .replace(/（右打）|\(右打\)/g, " (RHB)");
+    }
+    return {
+      value: ab.ab_id,
+      label: cleanLabel,
+    };
+  });
 
   return (
     <>
@@ -158,7 +167,7 @@ export default function ActualAtBatPage() {
         <strong
           style={{ fontSize: "15px", color: "#555", whiteSpace: "nowrap" }}
         >
-          選擇實戰打席 (Select At-Bat)：
+          {t("select_atbat_label")}：
         </strong>
         <div style={{ flex: 1 }}>
           <Select
@@ -175,7 +184,7 @@ export default function ActualAtBatPage() {
             options={atBatOptions}
             isLoading={isLoadingAtBats}
             isSearchable={true}
-            placeholder="搜尋打者或日期 (Search)..."
+            placeholder={t("search_atbat_placeholder")}
             styles={selectStyles}
           />
         </div>
@@ -187,7 +196,7 @@ export default function ActualAtBatPage() {
           className="panel-header"
           style={{ fontSize: "18px", color: "#2c3e50" }}
         >
-          實戰紀錄 (Original Sequence)
+          {t("original_sequence_title")}
         </div>
         <div
           style={{
@@ -272,13 +281,13 @@ export default function ActualAtBatPage() {
         </div>
       </div>
 
-      {/* 下半部：反事實實驗室 (Counterfactual Lab) */}
+      {/* 下半部：反事實實驗室 */}
       <div className="panel">
         <div
           className="panel-header"
           style={{ fontSize: "18px", color: "var(--highlight)" }}
         >
-          反事實實驗室 (Counterfactual Lab) - 決戰球 (Putaway) / 佈局球 (Setup)
+          {t("counterfactual_lab_title")}
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
@@ -302,7 +311,7 @@ export default function ActualAtBatPage() {
                   fontWeight: "bold",
                 }}
               >
-                戰術選擇 (Strategy)
+                {t("strategy_label")}
               </label>
               <select
                 value={simMode}
@@ -312,8 +321,8 @@ export default function ActualAtBatPage() {
                 }}
                 style={{ width: "100%", padding: "8px" }}
               >
-                <option value="last">改變決戰球 (Putaway Pitch - N)</option>
-                <option value="setup">改變佈局球 (Setup Pitch - N-1)</option>
+                <option value="last">{t("opt_putaway")}</option>
+                <option value="setup">{t("opt_setup")}</option>
               </select>
             </div>
 
@@ -321,7 +330,7 @@ export default function ActualAtBatPage() {
               <label
                 style={{ fontSize: "13px", color: "#555", fontWeight: "bold" }}
               >
-                改變球種 (Pitch Type)
+                {t("pitch_type_label")}
               </label>
               <select
                 value={currentType}
@@ -343,7 +352,7 @@ export default function ActualAtBatPage() {
               <label
                 style={{ fontSize: "13px", color: "#555", fontWeight: "bold" }}
               >
-                進壘位置 (Location)
+                {t("location_label")}
               </label>
               <select
                 value={currentZone}
@@ -353,11 +362,19 @@ export default function ActualAtBatPage() {
                 }}
                 style={{ width: "100%", padding: "8px" }}
               >
-                {Object.keys(ZONE_COORDINATES).map((zone) => (
-                  <option key={zone} value={zone}>
-                    {zone.replace("壞_", "壞_ ")} ({ZONE_EN[zone]})
-                  </option>
-                ))}
+                {Object.keys(ZONE_COORDINATES).map((zone) => {
+                  // 🌟 核心美化：根據當前語系顯示乾淨文字，不再中英括弧混雜！
+                  const displayZone =
+                    lang === "en"
+                      ? ZONE_EN[zone] || zone
+                      : zone.replace("壞_", "壞_ ");
+
+                  return (
+                    <option key={zone} value={zone}>
+                      {displayZone}
+                    </option>
+                  );
+                })}
               </select>
             </div>
 
@@ -368,7 +385,7 @@ export default function ActualAtBatPage() {
                 onClick={handleReSimulate}
                 disabled={isSimulating}
               >
-                {isSimulating ? "AI 推演中..." : "重新模擬 (Re-Simulate)"}
+                {isSimulating ? t("simulating") : t("btn_re_simulate")}
               </button>
             </div>
           </div>
@@ -382,27 +399,27 @@ export default function ActualAtBatPage() {
             }}
           >
             <OutcomeCompareCard
-              label="👀 不揮棒 (Take)"
+              label={t("outcome_take")}
               orig={origProbs?.[0]}
               cf={cfProbs?.[0]}
             />
             <OutcomeCompareCard
-              label="💨 揮空 (Whiff)"
+              label={t("outcome_whiff")}
               orig={origProbs?.[1]}
               cf={cfProbs?.[1]}
             />
             <OutcomeCompareCard
-              label="🛑 界外 (Foul)"
+              label={t("outcome_foul")}
               orig={origProbs?.[2]}
               cf={cfProbs?.[2]}
             />
             <OutcomeCompareCard
-              label="🏏 弱擊球 (Weak)"
+              label={t("outcome_weak")}
               orig={origProbs?.[3]}
               cf={cfProbs?.[3]}
             />
             <OutcomeCompareCard
-              label="🚀 強擊球 (Hard)"
+              label={t("outcome_hard")}
               orig={origProbs?.[4]}
               cf={cfProbs?.[4]}
             />
@@ -413,7 +430,7 @@ export default function ActualAtBatPage() {
   );
 }
 
-// 輔助卡片組件：清楚比對「原始真實機率」與「反事實推演機率」
+// 輔助卡片組件
 function OutcomeCompareCard({ label, orig, cf }) {
   return (
     <div

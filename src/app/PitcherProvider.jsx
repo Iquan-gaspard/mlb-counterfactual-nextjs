@@ -1,30 +1,42 @@
 "use client";
-import React, { useState, useEffect, createContext } from "react";
+import React, { useState, useEffect, createContext, useContext } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import Select from "react-select";
+import { useLanguage } from "@/context/LanguageContext"; // 🌟 引入語系 Hook
 
 export const API_BASE_URL =
   process.env.NODE_ENV === "development"
     ? "http://127.0.0.1:5000"
     : "https://baseball-web-game.onrender.com";
 
-// 🌟 新增 menuPortal 樣式，確保選單出竅後層級最高
 export const selectStyles = {
   menu: (provided) => ({ ...provided, zIndex: 9999 }),
   menuPortal: (base) => ({ ...base, zIndex: 9999 }),
   control: (provided) => ({ ...provided, borderRadius: "6px" }),
 };
 
-export const PitcherContext = createContext();
+// 🌟 防禦性架構：給予安全預設物件，杜絕 Cannot destructure property 致命崩潰！
+export const PitcherContext = createContext({
+  pitcherId: "808967",
+  pitcherData: null,
+});
+
+// 提供標準自定義 Hook
+export function usePitcher() {
+  const context = useContext(PitcherContext);
+  if (!context) {
+    throw new Error("usePitcher 必須在 PitcherProvider 內部使用");
+  }
+  return context;
+}
 
 export default function PitcherProvider({ children }) {
   const pathname = usePathname();
+  const { t } = useLanguage(); // 🌟 取得翻譯工具
   const [pitchers, setPitchers] = useState({});
   const [selectedPitcherId, setSelectedPitcherId] = useState("808967");
   const [isLoading, setIsLoading] = useState(true);
-
-  // 🌟 破框魔法必備：確認元件已經掛載到瀏覽器上
   const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
@@ -37,7 +49,6 @@ export default function PitcherProvider({ children }) {
         if (!res.ok) throw new Error("無法取得投手資料");
         const data = await res.json();
 
-        // 兼容陣列 (Supabase) 與物件 (Flask 備援) 結構
         const pitcherMap = {};
         if (Array.isArray(data)) {
           data.forEach((p) => {
@@ -72,17 +83,16 @@ export default function PitcherProvider({ children }) {
     <PitcherContext.Provider
       value={{
         pitcherId: selectedPitcherId,
-        pitcherData: pitchers[selectedPitcherId],
+        pitcherData: pitchers[selectedPitcherId] || null,
       }}
     >
-      {/* 🌟 修正 1：拔除 maxWidth: "100%"，讓畫面恢復置中且適當寬度 */}
       <div className="container" style={{ overflowX: "hidden" }}>
-        {/* 🌟 修正 2：拔除 flexDirection: "column"，讓桌機版恢復左右並排。手機版會由 globals.css 自動接管變成上下排列 */}
+        {/* 頂部投手選擇列 */}
         <div
           className="controls"
           style={{
             display: "flex",
-            alignItems: "center", // 恢復垂直置中對齊
+            alignItems: "center",
             gap: "15px",
             padding: "15px 25px",
             background: "#fff",
@@ -94,7 +104,7 @@ export default function PitcherProvider({ children }) {
           <strong
             style={{ fontSize: "16px", color: "#555", whiteSpace: "nowrap" }}
           >
-            對戰組合 (Matchup)：
+            {t("matchup")}：
           </strong>
           <div style={{ flex: 1, minWidth: "250px" }}>
             <Select
@@ -109,7 +119,9 @@ export default function PitcherProvider({ children }) {
               options={pitcherOptions}
               isLoading={isLoading}
               isSearchable={true}
-              placeholder="請輸入英文搜尋投手 (Search Pitcher)..."
+              placeholder={
+                t("search_pitcher") || "搜尋投手 (Search Pitcher)..."
+              }
               styles={selectStyles}
               menuPortalTarget={isMounted ? document.body : null}
               menuPosition="fixed"
@@ -117,7 +129,7 @@ export default function PitcherProvider({ children }) {
           </div>
         </div>
 
-        {/* 頁籤按鈕 (Tabs) 維持自動換行的設定 */}
+        {/* 頁籤導航 (Tabs) */}
         <div
           className="tab-navigation"
           style={{
@@ -130,16 +142,24 @@ export default function PitcherProvider({ children }) {
           <Link
             href="/"
             className={pathname === "/" ? "tab-btn active" : "tab-btn"}
-            style={{ flex: "1 1 120px", padding: "12px 10px" }}
+            style={{
+              flex: "1 1 120px",
+              padding: "12px 10px",
+              textAlign: "center",
+            }}
           >
-            📊 實戰打席分析
+            📊 {t("tab_atbat")}
           </Link>
           <Link
             href="/builder"
             className={pathname === "/builder" ? "tab-btn active" : "tab-btn"}
-            style={{ flex: "1 1 120px", padding: "12px 10px" }}
+            style={{
+              flex: "1 1 120px",
+              padding: "12px 10px",
+              textAlign: "center",
+            }}
           >
-            🎯 傳統自由配球
+            🎯 {t("tab_builder")}
           </Link>
           <Link
             href="/interactive"
@@ -149,15 +169,16 @@ export default function PitcherProvider({ children }) {
             style={{
               flex: "1 1 120px",
               padding: "12px 10px",
+              textAlign: "center",
               backgroundColor: pathname === "/interactive" ? "#27ae60" : "",
               color: pathname === "/interactive" ? "#fff" : "",
             }}
           >
-            🎮 沉浸式配球推演
+            🎮 {t("tab_interactive")}
           </Link>
         </div>
 
-        {/* 下方的分頁內容 */}
+        {/* 分頁內容 */}
         <div className="dashboard">{children}</div>
       </div>
     </PitcherContext.Provider>
